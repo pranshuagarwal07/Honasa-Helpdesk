@@ -1,137 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Operations · UAT desk</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css">
-<style>
-/* ---- operations ---------------------------------------------------------- */
-.ops-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 16px; align-items: end; }
-.ops-form .field { margin-bottom: 0; }
-.ops-form .go { display: flex; gap: 10px; align-items: center; }
-/* putaway: one row on a wide screen, Explain at the end of it */
-#f-put .panel-sec { container-type: inline-size; }
-#f-put .ops-form { grid-template-columns: minmax(150px, 1.4fr) minmax(120px, 1fr) minmax(130px, 1fr) 104px 140px auto auto; }
-.ops-form .seg { height: 40px; align-items: center; flex-wrap: nowrap; }
-@container (max-width: 980px) {
-  #f-put .ops-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  #f-put .ops-form .go { grid-column: 1 / -1; justify-content: flex-end; }
-}
-@container (max-width: 520px) {
-  #f-put .ops-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #f-put .ops-form > .field:first-child { grid-column: 1 / -1; }
-}
-.sec-h { font-size: 15px; font-weight: 600; line-height: 1.3; margin: 0 0 8px; }
-.sample.bins li { padding: 0; background: none; font: inherit; }
-.sample-tools { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; margin-top: 8px; font-size: 13px; color: var(--mut); }
-.sample-tools .link:hover { color: var(--ink); }
-/* rejections: counts in one right-aligned column so the rules line up */
-.rule-group { padding: 14px 0; border-top: 1px solid var(--line); }
-.rule-group:first-child { border-top: 0; padding-top: 4px; }
-.rule-group h4 { margin: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 14px; align-items: baseline; font-size: 14.5px; font-weight: 600; }
-.rule-group h4 .n { text-align: right; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
-.rule-group h4 .why { display: block; margin-top: 2px; font-size: 13.5px; font-weight: 400; color: var(--mut); }
-.rule-group ul { margin: 6px 0 0 86px; padding-left: 16px; font-size: 13.5px; color: var(--mut); }
-.rule-group .sample { margin-left: 86px; padding-left: 0; }
-.kv { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; font-size: 13.5px; color: var(--mut); }
-.kv b { color: var(--ink); font-weight: 600; }
-td.why { color: var(--mut); font-size: 13px; }
-td.none { color: var(--faint); }
-/* stuck stock: small counts, zeros recede, each count jumps to its list */
-.counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px; margin: 0; }
-.counts > div { position: relative; padding: 10px 12px; border-radius: var(--r-sm); }
-.counts > div:has(a):hover { background: var(--hover); }
-.counts dt { font-size: 12.5px; color: var(--mut); }
-.counts dd { margin: 2px 0 0; font-size: 26px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.counts dd a { color: inherit; text-decoration: none; }
-.counts dd a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.counts dd a:focus-visible { outline: 0; }
-.counts > div:has(a:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
-.counts .zero dd { color: var(--faint); font-weight: 500; }
-.counts .hot dd { color: var(--bad); }
-.clear-list { margin: 0; color: var(--mut); font-size: 13.5px; }
-.clear-list b { color: var(--ink); font-weight: 500; }
-@media (max-width: 640px) {
-  .ops-form .go .btn { flex: 1; min-height: 44px; }
-  .rule-group h4 { grid-template-columns: 56px minmax(0, 1fr); gap: 10px; }
-  .rule-group ul, .rule-group .sample { margin-left: 66px; }
-}
-</style>
-</head>
-<body>
-<div class="shell">
-<!--#rail-->
-<div class="stage">
-<main>
-  <div class="page-head">
-    <div>
-      <h2 id="mode-title">Go-live readiness</h2>
-      <p id="mode-lede"></p>
-    </div>
-  </div>
-
-  <!-- readiness -------------------------------------------------------------- -->
-  <section id="v-ready" hidden>
-    <form class="panel" id="f-ready"><div class="panel-sec">
-      <div class="ops-form">
-        <label class="field"><span>Compare config with <small>(optional)</small></span><select id="r-env"></select></label>
-        <label class="field"><span>Reference warehouse id <small>(optional)</small></span><input type="text" id="r-wh" inputmode="numeric" spellcheck="false" placeholder="e.g. one that already works"></label>
-        <div class="go"><button type="submit" class="btn primary" id="r-go">Run readiness check</button></div>
-      </div>
-      <p class="hint" style="margin:12px 0 0">Covers open sessions, SKU master gaps, whether putaway can place every class and UOM, bin types, the whole batch master, stuck stock, and config against a working warehouse. Read-only. Takes up to a minute.</p>
-    </div></form>
-    <div id="ready-out"></div>
-  </section>
-
-  <!-- putaway explainer --------------------------------------------------------- -->
-  <section id="v-putaway" hidden>
-    <form class="panel" id="f-put"><div class="panel-sec">
-      <div class="ops-form">
-        <label class="field"><span>SKU</span><input type="text" id="p-sku" spellcheck="false" placeholder="e.g. 10101163-0048"></label>
-        <label class="field"><span>Batch <small>(optional)</small></span><input type="text" id="p-batch" spellcheck="false" placeholder="e.g. 26MAY449"></label>
-        <label class="field"><span>UOM</span><select id="p-uom"><option value="L2">L2 (cases)</option><option value="L0">L0 (eaches)</option><option value="L3">L3 (pallets)</option></select></label>
-        <label class="field"><span>Quantity</span><input type="number" id="p-qty" min="1" step="1" value="1"></label>
-        <label class="field"><span>Bucket</span><select id="p-bucket"><option>Good</option><option>Damaged</option><option>Blocked</option><option>Expired</option><option>Excess</option></select></label>
-        <div class="field"><span>Arrives as</span><div class="seg" role="radiogroup" aria-label="Arrives as">
-          <input type="radio" name="p-mode" id="p-pal" value="pallet" checked><label for="p-pal">A pallet</label>
-          <input type="radio" name="p-mode" id="p-loose" value="loose"><label for="p-loose">Loose</label></div></div>
-        <div class="go"><button type="submit" class="btn primary" id="p-go">Explain</button></div>
-      </div>
-    </div></form>
-    <div id="put-out"></div>
-  </section>
-
-  <!-- stuck stock ---------------------------------------------------------------- -->
-  <section id="v-stuck" hidden>
-    <div class="panel"><div class="panel-sec" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-      <button type="button" class="btn primary" id="s-go">Find stuck stock</button>
-      <p class="hint" style="margin:0;flex:1 1 300px">Stock locked by a finished, cancelled or missing task, empty pallets taking positions, stock in inactive bins, negative quantities, and open sessions that block the inventory upload.</p>
-    </div></div>
-    <div id="stuck-out"></div>
-  </section>
-</main>
-</div>
-</div>
-
-<script src="/rail.js"></script>
-<script src="/combo.js"></script>
-<script>
+// Operations: go-live readiness, why putaway says no, stuck stock.
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString();
 const wh = () => $('#wh').value.trim();
-try { $('#wh').value = localStorage.getItem('whId') || '__WH__'; } catch { $('#wh').value = '__WH__'; }
+try { $('#wh').value = localStorage.getItem('whId') || DESK.wh; } catch { $('#wh').value = DESK.wh; }
 $('#wh').addEventListener('change', () => { try { localStorage.setItem('whId', wh()); } catch {} });
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 
 async function api(path, opts = {}) {
   let r;
-  try { r = await fetch(path, opts); } catch { throw new Error("Can't reach the local server. Start it with run.bat."); }
+  try { r = await fetch(path, opts); } catch { throw new Error(`Can't reach the local server. Start it with ${DESK.runBat}.`); }
   const body = await r.json().catch(() => ({}));
   if (!r.ok || body.error) throw new Error(body.error || `HTTP ${r.status}`);
   return body;
@@ -150,7 +28,7 @@ function showMode(m) {
   for (const k of Object.keys(MODES)) $('#v-' + k).hidden = k !== m;
   $('#mode-title').textContent = MODES[m][0];
   $('#mode-lede').textContent = MODES[m][1];
-  document.title = MODES[m][0] + ' · UAT desk';
+  document.title = MODES[m][0] + ' · ' + DESK.name;
   document.querySelectorAll('.rail-nav a[data-nav]').forEach(a => a.dataset.nav === m ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
   if (location.hash.slice(1) !== m) history.replaceState(null, '', '#' + m);
 }
@@ -161,7 +39,7 @@ showMode(location.hash.slice(1));
 (async () => {
   try {
     const r = await api('/api/compare/envs');
-    $('#r-env').innerHTML = '<option value="">Don’t compare</option>' + r.envs.map(e => `<option ${e === '__ENV__' ? 'selected' : ''}>${esc(e)}</option>`).join('');
+    $('#r-env').innerHTML = '<option value="">Don’t compare</option>' + r.envs.map(e => `<option ${e === DESK.env ? 'selected' : ''}>${esc(e)}</option>`).join('');
     const last = store.get('ops.ref');
     if (last) { if (last.env !== undefined) $('#r-env').value = last.env; $('#r-wh').value = last.wh || ''; }
   } catch { $('#r-env').innerHTML = '<option value="">Don’t compare</option>'; }
@@ -310,6 +188,3 @@ function stuckHtml(r) {
     ${empty.length ? `<div class="panel-sec"><p class="clear-list">Nothing found: ${empty.map(x => `<b>${esc(x)}</b>`).join(' · ')}</p></div>` : ''}
   </div>`;
 }
-</script>
-</body>
-</html>
