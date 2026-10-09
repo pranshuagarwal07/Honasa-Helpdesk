@@ -21,20 +21,42 @@ and fill in the read-only database user and password).
 
 ```
 server.js        entry point: config, database pools, page serving; passes /api/... to lib/
-lib/             one module per feature, each handling its own /api/... routes
-  acks.js          GRN and GIN acks: lookup, payload, push (refused when read-only)
-  inventory.js     test case, bulk fill, check a sheet, verify, consolidate stock
-  im-upload.js     IM cockpit Internal Movement upload sheets from a consolidation plan
-  masters.js       SKU, batch and production batch master checks
-  ops.js           go-live readiness, putaway explainer, stuck stock
-  compare.js       compare two nodes' config
+lib/             one folder per feature; each feature's index.js handles its own /api/... routes
+  core/            shared helpers: db.js (pools, q, tryQ), http.js (send, readBody, sendXlsx),
+                   xlsx.js (addSheet, cellValue), tokens.js (results kept for a download),
+                   util.js (upper, day keys, number formats)
+  wms/             reads and rules of the WMS itself
+    load-masters.js  a warehouse's bins, zones, search table, stock and encarta SKUs (cached 10 min)
+    search.js        which zones the search table lets a class + UOM + bucket into
+    pallets.js       best fit and every pallet in each bin (palletShare, palletsAfter)
+    capacity.js      the bin capacity check an IM upload runs (wmsCapacity, unitShare)
+    locks.js         task locks on stock (LOCK_KIND, palletLocks)
+  acks/            GRN and GIN acks: lookup, payload, push (refused when read-only)
+  inventory/       the /api/inv/... routes (index.js) and the inventory tools:
+    fill.js          bulk fill            check.js     check a sheet, its annotated download
+    verify.js        verify an upload     testcase.js  rows from the test case grid
+    catalog.js       snapshot and pickers sheet.js     read/write Append/Reset sheets
+    templates.js     the column template, a warehouse's own saved in data/templates/
+  planners/        consolidation planners
+    pallet-merge.js  merge partial pallets, empty bins by moving whole pallets
+    eaches.js        shelf bins by volume (+ eaches-check.js, an independent re-check)
+    relocate.js      bins under % full (+ relocate-check.js, an independent replay)
+    inputs.js        the pickers' scopes and the stock each planner reads
+    workbooks.js     each plan's download
+  im-upload/       IM cockpit Internal Movement upload files from a plan
+    rows.js          plan -> upload rows       files.js   rows -> files the uploader accepts
+  masters/         SKU, batch and production batch master checks
+  ops/             go-live readiness, putaway explainer, stuck stock
+  compare/         compare two nodes' config
 public/          what the browser loads
-  index.html       acks
-  inventory.html   inventory and masters tools
-  ops.html         operations tools
-  compare.html     compare nodes
-  app.css          shared styles and design tokens
-  combo.js         the dropdowns used on every page
+  pages/           acks.html (/), inventory.html (/inventory), ops.html (/ops), compare.html (/compare)
+                   server.js fills in the sidebar and the environment (the DESK line) when it serves them
+  css/app.css      shared styles and design tokens
+  js/              rail.js (sidebar), combo.js (the dropdowns on every page), one file per page:
+                   acks.js, ops.js, compare.js, and inventory/ with one file per tool, loaded in
+                   order by inventory.html (page.js first, start.js last)
+  partials/        rail.html, the sidebar on every page
+tests/           unit/, integration/, fixtures/ (Node's built-in test runner)
 config/
   envs.json        database connections per environment (contains passwords; don't share)
   envs.example.json  the same shape with no real values
@@ -47,7 +69,7 @@ samples/
   check-tests/     sheets made by that script
 docs/
   REVIEW_LOG.md    notes from earlier review passes
-_archive/        old copies and logs, kept for reference; nothing reads them
+_archive/        old copies, logs and .bak files, kept for reference; nothing reads them (not in git)
 ```
 
 `_archive/backup-20261003/` includes an old copy of `envs.json` with passwords. Treat the folder

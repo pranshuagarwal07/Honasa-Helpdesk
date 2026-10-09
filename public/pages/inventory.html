@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inventory Fill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+<!--#rail-->
+<div class="stage">
+<main>
+  <div class="page-head">
+    <div>
+      <h2 id="mode-title">Test case</h2>
+      <p id="mode-lede">Set up exact stock for a test. Pick bins, SKUs and batches, and download a sheet that passes the uploader's checks.</p>
+    </div>
+  </div>
+
+  <!-- build ------------------------------------------------------------------ -->
+  <section id="v-case">
+    <div class="panel case-bar">
+      <label class="field"><span>Test case name</span><input type="text" id="c-name" placeholder="e.g. fefo-two-batches" spellcheck="false"></label>
+      <div class="field"><span>Operation</span>
+        <div class="seg" role="radiogroup" aria-label="Operation">
+          <input type="radio" name="c-op" id="cop-a" value="APPEND" checked><label for="cop-a">Append</label>
+          <input type="radio" name="c-op" id="cop-r" value="RESET"><label for="cop-r">Reset</label></div></div>
+      <label class="field"><span>HU prefix</span><input type="text" id="c-prefix" spellcheck="false"></label>
+      <label class="field"><span>Pallet code length</span><input type="number" id="c-len" min="2" max="40" step="1"></label>
+      <label class="field"><span>Pallet HU kind</span><select id="c-kind" data-cb-empty="Not loaded"></select></label>
+      <p class="hulen" id="c-len-h" aria-live="polite"></p>
+      <label class="field"><span>Near-expiry warning (days)</span><input type="number" id="c-shelf" value="30" min="0"></label>
+    </div>
+
+    <div class="binfilter" role="group" aria-label="Bin search filter">
+      <span class="bf-label">Bin search</span>
+      <label>Area <select id="bf-area"><option value="">All areas</option></select></label>
+      <label>Zone <select id="bf-zone"><option value="">All zones</option></select></label>
+      <label class="bf-check"><input type="checkbox" id="bf-empty"> Empty bins only</label>
+      <span class="bf-count" id="bf-count"></span>
+    </div>
+
+    <h3 class="presets-title" id="presets-title">Add rows from a preset</h3>
+    <div class="presets" role="group" aria-labelledby="presets-title">
+      <button type="button" class="preset" data-preset="single"><b>Specific stock</b><span>This SKU, batch and quantity in this bin.</span></button>
+      <button type="button" class="preset" data-preset="fefo"><b>FEFO / batch mix</b><span>One SKU across batches with different expiries.</span></button>
+      <button type="button" class="preset" data-preset="pallets"><b>Multi-pallet</b><span>Several pallets of a SKU in one pallet bin.</span></button>
+      <button type="button" class="preset" data-preset="status"><b>Bucket / status</b><span>Damaged, PRE-GRN or POST-GIN stock.</span></button>
+      <button type="button" class="preset" data-preset="many"><b>Across many SKUs</b><span>Repeat a setup for N SKUs in a zone.</span></button>
+    </div>
+    <div id="preset-form"></div>
+
+    <div class="panel">
+      <div class="panel-sec grid-head">
+        <h3 style="margin:0">Rows <small id="c-count"></small></h3>
+        <div class="tools">
+          <button type="button" class="btn small" id="c-add">Add a blank row</button>
+          <label class="btn small" for="c-import">Load a sheet</label><input type="file" id="c-import" accept=".xlsx" hidden>
+          <button type="button" class="btn small" id="c-clear">Clear rows</button>
+        </div>
+      </div>
+      <div class="grid-wrap"><table class="grid" id="c-grid"></table></div>
+      <datalist id="dl-bins" data-filtered data-limit="80"></datalist><datalist id="dl-skus" data-filtered data-limit="80"></datalist>
+    </div>
+
+    <div class="case-foot" id="c-foot"></div>
+  </section>
+
+  <section id="v-build" class="build" hidden>
+    <form id="settings" class="panel settings" autocomplete="off">
+      <div class="panel-sec">
+        <h3>Fill settings</h3>
+        <div class="field">
+          <span>Target occupancy per zone</span>
+          <div class="target">
+            <input type="range" id="t-range" min="5" max="100" step="1" value="65" aria-label="Target occupancy">
+            <div class="num"><input type="number" id="t-num" min="1" max="100" value="65" aria-label="Target occupancy percent"></div>
+          </div>
+          <small>Zones already above the target get nothing.</small>
+        </div>
+        <div class="field">
+          <span>Areas to fill</span>
+          <div class="checks-row">
+            <label><input type="checkbox" name="area" value="INVENTORY" checked> Inventory</label>
+            <label><input type="checkbox" name="area" value="OVERFLOW"> Overflow</label>
+          </div>
+        </div>
+        <div class="field">
+          <span>Operation</span>
+          <div class="seg" role="radiogroup" aria-label="Operation">
+            <input type="radio" name="op" id="op-a" value="APPEND" checked><label for="op-a">Append</label>
+            <input type="radio" name="op" id="op-r" value="RESET"><label for="op-r">Reset</label>
+          </div>
+          <small>Fills only use empty bins, so both add the same stock.</small>
+        </div>
+        <div class="pair">
+          <label class="field"><span>HU prefix</span><input type="text" id="prefix" spellcheck="false"></label>
+          <label class="field"><span>Pallet HU kind</span><select id="kind" data-cb-empty="Not loaded"></select></label>
+        </div>
+        <label class="field"><span>Pallet code length</span><input type="number" id="len" min="2" max="40" step="1">
+          <small class="hulen" id="len-h" aria-live="polite"></small></label>
+        <label class="field"><span>Minimum shelf life left (days)</span><input type="number" id="shelf" value="180" min="0"></label>
+      </div>
+      <div class="panel-sec">
+        <details class="adv">
+          <summary>Advanced</summary>
+          <label class="field"><span>Only SKUs matching</span><input type="text" id="inc" placeholder="^\d{8}(-\d+)?$" spellcheck="false"><small>A regular expression. Leave blank for all.</small></label>
+          <label class="field"><span>Skip SKUs matching</span><input type="text" id="exc" spellcheck="false"></label>
+          <div class="pair">
+            <label class="field"><span>Bucket</span><select id="bucket"><option data-sub="sellable stock">Good</option><option data-sub="damaged bucket">Damaged</option></select></label>
+            <label class="field"><span>Inclusion status</span><select id="incl"><option data-sub="counted in stock">INCLUDED</option><option data-sub="received, not yet GRN-ed">PRE-GRN</option><option data-sub="issued, not yet shipped">POST-GIN</option></select></label>
+          </div>
+          <div class="pair">
+            <label class="field"><span>Batches per SKU</span><input type="number" id="maxb" value="6" min="1"></label>
+            <label class="field"><span>Max eaches per bin</span><input type="number" id="maxe" value="600" min="1"></label>
+          </div>
+          <div class="pair">
+            <label class="field"><span>Max kg per bin</span><input type="number" id="maxkg" value="35" min="1"><small>Used when the bin type has no weight limit.</small></label>
+            <label class="field"><span>Seed</span><input type="number" id="seed" value="20260916"><small>Same seed, same sheet.</small></label>
+          </div>
+          <label class="field"><span>Encarta principal id</span><input type="text" id="principal" spellcheck="false" placeholder="Worked out from stock"></label>
+        </details>
+      </div>
+      <div class="panel-sec">
+        <div class="tmpl"><span>Columns: <b id="tmpl-name">standard</b></span>
+          <label class="btn small" for="tmpl-file">Use my template</label><input type="file" id="tmpl-file" accept=".xlsx" hidden></div>
+      </div>
+      <div class="panel-sec"><button class="btn primary big" id="go-build" disabled>Build fill</button></div>
+    </form>
+
+    <div id="build-out"><div class="loading">Loading the warehouse…</div></div>
+  </section>
+
+  <!-- check ------------------------------------------------------------------ -->
+  <section id="v-check" class="narrow" hidden>
+    <div class="panel pick" id="k-pick">
+      <div class="panel-sec">
+        <div class="act-head"><h3>Checks to run<small class="pick-count">Loading…</small></h3>
+          <div class="pick-presets" role="group" aria-label="Select checks">
+            <button type="button" class="link" data-preset="all">All</button>
+            <button type="button" class="link" data-preset="fail">Red only</button>
+            <button type="button" class="link" data-preset="none">None</button></div></div>
+        <details class="pick-more"><summary>Choose checks</summary>
+          <div class="pick-groups"></div>
+          <p class="hint pick-legend"><span class="lv fail"></span>blocks the upload, or the next putaway or drop <span class="lv warn"></span>works, but against best fit <span class="lv info"></span>information only.
+            A check that's off flags no rows here or in the checked sheet. Your choice is remembered.</p></details>
+        <div class="pick-rerun"></div>
+      </div>
+    </div>
+    <label class="drop" id="drop-check" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-check">
+      <b>Drop an Append/Reset sheet here, or choose a file</b>
+      <span>Every row is checked against this warehouse's live master data and the stock in its bins right now. Nothing is uploaded.</span></label>
+    <div id="check-out"></div>
+  </section>
+
+  <!-- consolidate ------------------------------------------------------------ -->
+  <section id="v-consolidate" class="narrow" hidden>
+    <div class="seg" role="radiogroup" aria-label="What to consolidate" style="margin-bottom:12px">
+      <input type="radio" name="cs-kind" id="csk-e" value="eaches" checked><label for="csk-e">Shelf bins (eaches, cases)</label>
+      <input type="radio" name="cs-kind" id="csk-p" value="pallets"><label for="csk-p">Pallets</label>
+      <input type="radio" name="cs-kind" id="csk-r" value="relocate"><label for="csk-r">Bins under % full</label></div>
+
+    <div id="cs-eaches">
+      <div class="panel">
+        <div class="panel-sec">
+          <div class="act-head"><h3>Where to merge<small id="ce-count">Loading areas…</small></h3>
+            <button type="button" class="link" id="ce-reload">Reload areas</button></div>
+          <div id="ce-scope" class="ce-scope"></div>
+          <p class="hint" style="margin:8px 0 0">Stock is only poured between bins of the areas and zones ticked here. Shelf bins only.</p>
+        </div>
+        <div class="panel-sec">
+          <div class="act-head"><h3>Bin types<small id="ce-bt-count"></small></h3></div>
+          <div id="ce-types" class="ce-types"></div>
+          <p class="hint" style="margin:8px 0 0">Only bins of the ticked types give or take stock, so a pour can go between two ticked types.</p>
+        </div>
+        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+          <fieldset class="ce-units"><legend>Move</legend>
+            <label class="bf-check"><input type="checkbox" id="ce-u-l0" checked> Eaches (L0)</label>
+            <label class="bf-check"><input type="checkbox" id="ce-u-l2"> Cases (L2), whole</label></fieldset>
+          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="ce-below" value="100" min="5" max="100" step="5"
+            title="A bin at or above this fill (of its own volume) is never emptied, but can still take stock. 100 = any bin."></label>
+          <label class="field" style="max-width:200px"><span>Fill bins up to (% of volume)</span><input type="number" id="ce-fill" value="100" min="10" max="100" step="5"></label>
+          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="ce-cross"> Pour between zones of the same area</label>
+          <label class="bf-check" style="padding-bottom:8px" title="WMS putaway only checks volume. Many shelf bins already hold more than their max kg."><input type="checkbox" id="ce-kg" checked> Keep bins within their max kg</label>
+          <button type="button" class="btn primary" id="ce-go">Find bins to empty</button>
+        </div>
+        <div class="panel-sec"><p class="hint" style="margin:0">Each pour is checked against the receiving bin's volume (bin type volume vs. quantity × L0 volume, the way putaway fills shelves),
+          its max weight if ticked, and its multi-SKU / multi-batch / max SKU / max SKU-batch rules counting what's already in it. Cases move whole, sized by their L2 volume.
+          A bin holding a unit that isn't ticked, bins with locked stock, fixed bins, and SKUs without a volume for their unit are left alone. Bin types whose volume looks unset (10,000 L or more) are skipped. Reads the stock now; nothing is moved.</p></div>
+      </div>
+      <div id="ce-out"></div>
+    </div>
+
+    <div id="cs-pallets" hidden>
+    <div class="panel"><div class="panel-sec" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn primary" id="cs-go">Find what can be freed</button>
+      <p class="hint" style="margin:0;flex:1 1 300px">Reads the stock in this warehouse's storage bins right now. Nothing is moved or changed. Pallets a task has locked are left out of the plan.</p>
+    </div></div>
+    <div id="cs-out"></div>
+    </div>
+
+    <div id="cs-relocate" hidden>
+      <div class="panel">
+        <div class="panel-sec">
+          <div class="act-head"><h3>Empty bins of<small id="cr-from-count"></small></h3>
+            <button type="button" class="link" id="cr-reload">Reload areas</button></div>
+          <div id="cr-from" class="cr-pick"></div>
+        </div>
+        <div class="panel-sec">
+          <div class="act-head"><h3>Into bins of<small id="cr-to-count"></small></h3></div>
+          <div id="cr-to" class="cr-pick"></div>
+          <p class="hint" style="margin:8px 0 0">Every inventory area, pallet and shelf bins. Tick bin types inside a zone, so ZONE-1 3D bins and ZONE-2 1D bins don't also pull in ZONE-1 1D bins.
+            A bin ticked on both sides can give or take.</p>
+        </div>
+        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="cr-below" value="5" min="0.1" max="100" step="0.5"></label>
+          <label class="field" style="max-width:260px"><span>Empty bins can receive</span><select id="cr-empty">
+            <option value="smaller" selected>Only smaller ones (frees space)</option><option value="any">Any (e.g. to clear a zone)</option><option value="none">No</option></select></label>
+          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="cr-kg" checked> Keep bins within their max kg</label>
+          <button type="button" class="btn primary" id="cr-go">Find bins to empty</button>
+        </div>
+        <div class="panel-sec"><p class="hint" style="margin:0">How full: a pallet bin counts full pallets (the SKU's L3, cases per pallet) over its pallet positions, so a 3D bin with 2 cases of a
+          48-case SKU is 1.4% full. A shelf bin counts stock volume over bin volume. A pallet's cases go onto a pallet of the same SKU and batch that has room, or the pallet moves whole
+          into a free position; pallet stock only goes to pallet bins, shelf stock only to shelf bins. Every step is checked against bin and pallet mixing rules (multi-SKU, multi-batch,
+          max SKU), pallet positions, a full pallet, max kg, the search table for another zone, task locks and fixed bins. Reads the stock now; nothing is moved.</p></div>
+      </div>
+      <div id="cr-out"></div>
+    </div>
+  </section>
+
+  <!-- masters ---------------------------------------------------------------- -->
+  <section id="v-masters" class="narrow" hidden>
+    <div class="panel pick" id="m-pick">
+      <div class="panel-sec">
+        <div class="act-head"><h3>Checks to run<small class="pick-count">Loading…</small></h3>
+          <div class="pick-presets" role="group" aria-label="Select checks">
+            <button type="button" class="link" data-preset="all">All</button>
+            <button type="button" class="link" data-preset="fail">Red only</button>
+            <button type="button" class="link" data-preset="none">None</button></div></div>
+        <div class="pick-groups"></div>
+        <p class="hint pick-legend"><span class="lv fail"></span>encarta rejects it, or it goes in as wrong data <span class="lv warn"></span>suspicious <span class="lv info"></span>information only.
+          A check that's off flags no rows in the checked sheet and adds nothing to the fix sheet. Your choice is remembered.</p>
+        <div class="pick-rerun"></div>
+      </div>
+    </div>
+    <label class="drop" id="drop-masters" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-masters" multiple>
+      <b>Drop SKU, batch and/or production batch master sheets here, or choose files</b>
+      <span>Drop them together to check them against each other: SKUs in the SKU file count for the batch file, and batches for the production file. Everything else is checked against encarta for this warehouse's principal. Nothing is uploaded.</span></label>
+    <div id="masters-out"></div>
+  </section>
+
+  <!-- verify ----------------------------------------------------------------- -->
+  <section id="v-verify" class="narrow" hidden>
+    <div class="panel"><div class="panel-sec">
+      <h3>After you upload in the panel</h3>
+      <label class="field" style="max-width:280px"><span>HU prefix used</span><input type="text" id="v-prefix" spellcheck="false"><small>Finds empty pallets a failed upload left behind.</small></label>
+      <div id="verify-last"></div>
+    </div></div>
+    <label class="drop" id="drop-verify" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-verify">
+      <b>Drop the sheet you uploaded, or choose a file</b>
+      <span>Each line is compared with the stock now in those bins.</span></label>
+    <div id="verify-out"></div>
+  </section>
+</main>
+</div>
+</div>
+<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat' }; // filled in by server.js</script>
+<script src="/js/rail.js"></script>
+<script src="/js/combo.js"></script>
+<script src="/js/inventory/page.js"></script>
+<script src="/js/inventory/snapshot.js"></script>
+<script src="/js/inventory/fill.js"></script>
+<script src="/js/inventory/picker.js"></script>
+<script src="/js/inventory/check.js"></script>
+<script src="/js/inventory/im-files.js"></script>
+<script src="/js/inventory/consolidate.js"></script>
+<script src="/js/inventory/masters.js"></script>
+<script src="/js/inventory/verify.js"></script>
+<script src="/js/inventory/testcase.js"></script>
+<script src="/js/inventory/presets.js"></script>
+<script src="/js/inventory/start.js"></script>
+</body>
+</html>

@@ -4,12 +4,14 @@
 // Run:  run.bat       -> SBX_HONASA_UAT  on http://localhost:8765
 //       run-prod.bat  -> SBX_HONASA_PROD on http://localhost:8766 (read-only: lookups, sheets, compare; no pushes)
 // The environment comes from APP_ENV (default SBX_HONASA_UAT); its connection lives in config/envs.json.
-// Layout: public/ pages and assets, lib/ the feature modules, config/ connections, data/ saved templates.
+// Layout: public/pages the pages, public/css and public/js their assets, lib/ the feature modules
+// (one folder per feature, lib/core shared helpers), config/ connections, data/ saved templates.
 // Needs the StackBox VPN.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { Pool } = require("pg");
+const { makePool, q, tryQ } = require("./lib/core/db");
+const { send } = require("./lib/core/http");
 
 // ---- config -----------------------------------------------------------------
 const ENV = process.env.APP_ENV || "SBX_HONASA_UAT";
@@ -32,19 +34,8 @@ const PORT = Number(process.env.PORT) || CFG.appPort || 8765;
 const LABEL = ENV.replace(/^SBX_HONASA_/, ""); // "UAT", "PROD"
 const RUN_BAT = ENV === "SBX_HONASA_UAT" ? "run.bat" : `run-${LABEL.toLowerCase()}.bat`;
 
-// an idle connection dropping (VPN reconnect, DB restart) emits "error" on the pool;
-// unhandled, that kills the whole server, so log it and let the next query reconnect
-const keepAlive = (p, label) => { p.on("error", (e) => console.error(`${label}: idle database connection dropped (${e.message})`)); return p; };
-// self-signed internal cert — same default the wms repo uses
-const pool = (database) => keepAlive(new Pool({ ...DB_HOST, database, ssl: { rejectUnauthorized: false }, max: 4,
-  connectionTimeoutMillis: 10000, statement_timeout: 120000 }), database);
-const wms = pool(CFG.databases?.wms || "postgres");
-const encarta = pool(CFG.databases?.encarta || "encarta");
-const q = async (db, sql, params = []) => (await db.query(sql, params)).rows;
-const tryQ = async (db, sql, params) => {
-  try { return [await q(db, sql, params), null]; }
-  catch (e) { return [[], e.message]; } // column/table differs on this schema version
-};
+const wms = makePool(DB_HOST, CFG.databases?.wms || "postgres");
+const encarta = makePool(DB_HOST, CFG.databases?.encarta || "encarta");
 
 // ---- http -------------------------------------------------------------------
 // read per request so page edits show up on refresh without a restart
@@ -54,14 +45,14 @@ const page = (file, nav) => {
   // the file's own leading comment is for whoever edits it, not for the page
   let rail = fs.readFileSync(path.join(PUBLIC, "partials", "rail.html"), "utf8").replace(/^<!--[\s\S]*?-->\r?\n/, "").trimEnd();
   if (nav) rail = rail.replace(`data-nav="${nav}"`, `data-nav="${nav}" aria-current="page"`);
-  const html = fs.readFileSync(path.join(PUBLIC, file), "utf8").replace("<!--#rail-->", () => rail)
+  const html = fs.readFileSync(path.join(PUBLIC, "pages", file), "utf8").replace("<!--#rail-->", () => rail)
     .replaceAll("__ENV__", ENV).replaceAll("__WH__", DEFAULT_WH_ID)
     .replaceAll("UAT desk", `${LABEL} desk`).replaceAll("run.bat", RUN_BAT);
   return !READ_ONLY ? html : html.replace("<body>", '<body class="read-only">')
     .replace(RAIL_FOOT, `Read-only: this app never writes to ${ENV}. Ack pushes are switched off here.`);
 };
 // inventory and ops mark their current link themselves, from the #mode in the address
-const PAGES = { "/": ["index.html", "acks"], "/inventory": ["inventory.html"], "/compare": ["compare.html", "compare"], "/ops": ["ops.html"] };
+const PAGES = { "/": ["acks.html", "acks"], "/inventory": ["inventory.html"], "/compare": ["compare.html", "compare"], "/ops": ["ops.html"] };
 
 // scripts, styles and images under public/. Pages only ever go through page(), never raw.
 const ASSET_TYPES = { ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml",
@@ -89,8 +80,7 @@ const compare = require("./lib/compare")({
     if (!conn.password) return async () => { throw new Error(`Add the read-only database password for ${env} to config/envs.json, then run the comparison again.`); };
     const id = `${env}/${which}`;
     if (!envPools.has(id)) {
-      envPools.set(id, keepAlive(new Pool({ ...conn, database,
-        ssl: { rejectUnauthorized: false }, max: 4, connectionTimeoutMillis: 10000, statement_timeout: 60000 }), id));
+      envPools.set(id, makePool(conn, database, { statementTimeout: 60000, label: id }));
     }
     const p = envPools.get(id);
     return async (sql, params = []) => (await p.query(sql, params)).rows;
@@ -99,12 +89,6 @@ const compare = require("./lib/compare")({
 
 const acks = require("./lib/acks")({ wms, encarta, q, tryQ, URLS, READ_ONLY, ENV });
 const ops = require("./lib/ops")({ wms, encarta, q, tryQ, inventory, masters, compare, ENV });
-
-const send = (res, code, body, type = "application/json") => {
-  const data = type === "application/json" ? JSON.stringify(body) : body;
-  res.writeHead(code, { "Content-Type": type });
-  res.end(data);
-};
 
 // Only this app's own pages may use it. Listening on 127.0.0.1 isn't enough: any web page
 // open in the browser can POST to localhost (and could push an ack), and DNS rebinding can

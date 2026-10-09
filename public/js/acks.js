@@ -1,54 +1,4 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GRN &amp; GIN Acks</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
-<link rel="stylesheet" href="/app.css">
-</head>
-<body>
-<div class="shell">
-<!--#rail-->
-<div class="stage">
-<main>
-  <div class="page-head">
-    <div>
-      <h2>GRN &amp; GIN acks</h2>
-      <p>Enter an ASN number to ack its GRN, or an outbound order code to ack its GIN. You review the payload before anything is sent.</p>
-    </div>
-  </div>
-  <form id="f" class="lookup" autocomplete="off">
-    <label class="visually-hidden" for="code">ASN number or order code</label>
-    <input id="code" spellcheck="false" placeholder="ASN or order code" autofocus>
-    <fieldset class="seg" style="border:0;margin:0">
-      <legend class="visually-hidden">What the code is</legend>
-      <input type="radio" name="kind" id="k-auto" value="auto" checked><label for="k-auto">Detect</label>
-      <input type="radio" name="kind" id="k-asn" value="asn"><label for="k-asn">ASN</label>
-      <input type="radio" name="kind" id="k-order" value="order"><label for="k-order">Order</label>
-    </fieldset>
-    <button class="btn primary big" id="go">Look up</button>
-  </form>
-
-  <div id="out">
-    <section class="empty">
-      <ol class="steps">
-        <li><b>Find</b><span>Enter the ASN number or order code.</span></li>
-        <li><b>Review</b><span>Check the warnings and the payload built from the WMS.</span></li>
-        <li><b>Push</b><span>Send the ack to cincout.</span></li>
-        <li><b>Verify</b><span>Status is read back so you know it landed.</span></li>
-      </ol>
-    </section>
-  </div>
-</main>
-</div>
-</div>
-
-<script src="/rail.js"></script>
-<script>
+// GRN & GIN acks: look up an ASN or order code, review the payload, push it.
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const stampTime = () => new Date().toLocaleString([], {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}).toUpperCase();
@@ -56,7 +6,7 @@ const ICON_STOP = '<svg width="18" height="18" viewBox="0 0 20 20" fill="current
 const ICON_SELF = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.7"/><path d="M10 9v5M10 6.2v.1" stroke-linecap="round"/></svg>';
 let cur = null;
 
-try { $('#wh').value = localStorage.getItem('whId') || '__WH__'; } catch { $('#wh').value = '__WH__'; }
+try { $('#wh').value = localStorage.getItem('whId') || DESK.wh; } catch { $('#wh').value = DESK.wh; }
 $('#wh').addEventListener('input', () => { const v = $('#wh').value.trim(); if (/^\d+$/.test(v)) { try { localStorage.setItem('whId', v); } catch {} } });
 
 function tone(status) {
@@ -165,7 +115,7 @@ $('#f').onsubmit = async e => {
   try {
     r = await fetch(`/api/lookup?code=${encodeURIComponent(code)}&kind=${kind}&whId=${encodeURIComponent(wh)}`).then(x => x.json());
   } catch {
-    r = {error: "Can't reach the local server. Start it with run.bat."};
+    r = {error: `Can't reach the local server. Start it with ${DESK.runBat}.`};
   }
   go.disabled = false; go.textContent = 'Look up';
   if (r.error) { out.innerHTML = `<div class="alert" role="alert">${esc(r.error)}</div>`; return; }
@@ -275,6 +225,3 @@ async function doPush(payload) {
   showResult(outcome(cur.type, r, since), r);
   if (window.matchMedia('(max-width: 1060px)').matches) $('#res').scrollIntoView({block: 'nearest'});
 }
-</script>
-</body>
-</html>
