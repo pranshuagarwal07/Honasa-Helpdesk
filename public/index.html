@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GRN &amp; GIN Acks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell">
+<!--#rail-->
+<div class="stage">
+<main>
+  <div class="page-head">
+    <div>
+      <h2>GRN &amp; GIN acks</h2>
+      <p>Enter an ASN number to ack its GRN, or an outbound order code to ack its GIN. You review the payload before anything is sent.</p>
+    </div>
+  </div>
+  <form id="f" class="lookup" autocomplete="off">
+    <label class="visually-hidden" for="code">ASN number or order code</label>
+    <input id="code" spellcheck="false" placeholder="ASN or order code" autofocus>
+    <fieldset class="seg" style="border:0;margin:0">
+      <legend class="visually-hidden">What the code is</legend>
+      <input type="radio" name="kind" id="k-auto" value="auto" checked><label for="k-auto">Detect</label>
+      <input type="radio" name="kind" id="k-asn" value="asn"><label for="k-asn">ASN</label>
+      <input type="radio" name="kind" id="k-order" value="order"><label for="k-order">Order</label>
+    </fieldset>
+    <button class="btn primary big" id="go">Look up</button>
+  </form>
+
+  <div id="out">
+    <section class="empty">
+      <ol class="steps">
+        <li><b>Find</b><span>Enter the ASN number or order code.</span></li>
+        <li><b>Review</b><span>Check the warnings and the payload built from the WMS.</span></li>
+        <li><b>Push</b><span>Send the ack to cincout.</span></li>
+        <li><b>Verify</b><span>Status is read back so you know it landed.</span></li>
+      </ol>
+    </section>
+  </div>
+</main>
+</div>
+</div>
+
+<script src="/rail.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const stampTime = () => new Date().toLocaleString([], {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'}).toUpperCase();
+const ICON_STOP = '<svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 1.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17Zm-.9 4.2h1.8v5.6H9.1V5.7Zm.9 8.8a1.1 1.1 0 1 1 0-2.2 1.1 1.1 0 0 1 0 2.2Z"/></svg>';
+const ICON_SELF = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.7"/><path d="M10 9v5M10 6.2v.1" stroke-linecap="round"/></svg>';
+let cur = null;
+
+try { $('#wh').value = localStorage.getItem('whId') || '__WH__'; } catch { $('#wh').value = '__WH__'; }
+$('#wh').addEventListener('input', () => { const v = $('#wh').value.trim(); if (/^\d+$/.test(v)) { try { localStorage.setItem('whId', v); } catch {} } });
+
+function tone(status) {
+  if (!status) return 'muted';
+  if (/^(ACKED|AUTO_ACKED)$/.test(status)) return 'ok';
+  if (/REVERSAL|PARTIAL/.test(status)) return 'warn';
+  if (/FAIL|REJECT|CANCEL/.test(status)) return 'bad';
+  return '';
+}
+const pill = s => s ? `<span class="pill ${tone(s)}">${esc(s)}</span>` : '<span class="pill muted">None</span>';
+const shortId = id => id ? `<span title="${esc(id)}">${esc(String(id).slice(0, 13))}…</span>` : '';
+const fact = (label, html) => `<div><dt>${esc(label)}</dt><dd class="${html ? '' : 'none'}">${html || 'None'}</dd></div>`;
+
+function facts(r) {
+  const s = r.summary;
+  if (r.type === 'GRN') {
+    return fact('GRN status', pill(s.grn?.status)) +
+      fact('ASN', s.asn.active ? 'Active' : 'Inactive') +
+      fact('Session', shortId(s.asn.sessionId)) +
+      fact('Purchase orders', esc((s.poNos || []).join(', ')));
+  }
+  const flag = r.payload.deliverOrderInput?.[0]?.processFlag;
+  return fact('Order GIN status', pill(s.order.ginStatus)) +
+    fact('Trip', esc(s.order.tripCode || '')) +
+    fact('Session', shortId(s.order.sessionId)) +
+    fact('GINs', s.gins.map(g => pill(g.status)).join(' ')) +
+    fact('Process flag', esc(flag || ''));
+}
+
+function lineTable(r) {
+  const rows = r.lines;
+  if (!rows.length) return `<p class="none-msg">No lines on this ${r.type} yet.</p>`;
+  const hide = /^(id|whId|grnId|asnId|sessionId|createdAt|updatedAt|deletedAt|ginTripCode|active|skuId)$/;
+  const keys = Object.keys(rows[0]).filter(k => !hide.test(k));
+  const isNum = k => /qty/i.test(k);
+  const head = k => ({skuCode: 'SKU', uom: 'UOM', batch: 'Batch', status: 'Status', issuedQty: 'Loaded qty', qty: 'Qty', huId: 'Pallet'})[k] || k;
+  const cell = (k, v) => {
+    if (k === 'status') return pill(v);
+    if (/Id$/.test(k) && v) return shortId(v);
+    return esc(v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
+  };
+  return `<div class="table-wrap"><table>
+    <thead><tr>${keys.map(k => `<th class="${isNum(k) ? 'num' : ''}">${esc(head(k))}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(row => `<tr>${keys.map(k => `<td class="${isNum(k) ? 'num' : ''}${k === 'skuCode' ? ' sku' : ''}">${cell(k, row[k])}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function render(r, code) {
+  const gin = r.type === 'GIN';
+  const json = JSON.stringify(r.payload, null, 2);
+  const issues = [
+    ...r.warnings.map(w => `<li class="stop">${ICON_STOP}<span>${esc(w)}</span></li>`),
+    ...r.notes.map(n => `<li class="self">${ICON_SELF}<span>${esc(n)}</span></li>`),
+  ].join('');
+  return `<div class="work">
+    <article class="doc ${gin ? 'gin' : ''}">
+      <header class="doc-head">
+        <div><div class="doc-kind">${gin ? 'Goods issue note, outbound order' : 'Goods receipt note, ASN'}</div>
+          <h2 class="doc-no"><span class="rl xl">${esc(code)}</span></h2></div>
+      </header>
+      <section class="doc-sec"><dl class="facts">${facts(r)}</dl></section>
+      <section class="doc-sec">
+        <h3>${r.warnings.length ? `${r.warnings.length === 1 ? 'One thing' : r.warnings.length + ' things'} to fix before pushing` : 'Before pushing'}</h3>
+        <ul class="issues">${issues}</ul>
+      </section>
+      <section class="doc-sec"><h3>${gin ? 'Loaded lines' : 'Received lines'}</h3>${lineTable(r)}</section>
+    </article>
+
+    <aside class="act" aria-label="Payload and push">
+      <section class="act-sec">
+        <div class="act-head">
+          <h3>Payload</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${r.altPayload ? `<div class="seg" role="radiogroup" aria-label="Ack level">
+              <input type="radio" name="lvl" id="lvl-asn" value="asn" checked><label for="lvl-asn">ASN level</label>
+              <input type="radio" name="lvl" id="lvl-po" value="po"><label for="lvl-po">PO level</label></div>` : ''}
+            <button type="button" class="btn small" id="copy">Copy</button>
+          </div>
+        </div>
+        <textarea id="pl" spellcheck="false" aria-label="Payload JSON" rows="${Math.min(22, json.split(/\n/).length + 1)}">${esc(json)}</textarea>
+        <p class="hint">${gin
+          ? 'Editable. An issuedQty below the loaded qty counts as a short issue, and the difference is unpicked.'
+          : 'Editable. Choose PO level if the session acks by purchase order.'}</p>
+      </section>
+      <section class="act-sec push">${r.readOnly
+        ? `<p class="ro-note">Read-only environment. This app doesn't push acks here. Copy the payload if you need it.</p>`
+        : `<button type="button" class="btn primary big" id="push">Push ${r.type} ack</button>
+        <small>Sends to ${esc(r.url.replace(/^https?:\/\/[^/]+/, ''))}</small>`}
+      </section>
+      <div id="res"></div>
+    </aside>
+  </div>`;
+}
+
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  const code = $('#code').value.trim(), wh = $('#wh').value.trim();
+  const out = $('#out'), go = $('#go');
+  if (!code) { $('#code').focus(); return; }
+  if (!/^\d+$/.test(wh)) { out.innerHTML = '<div class="alert" role="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; $('#wh').focus(); return; }
+  try { localStorage.setItem('whId', wh); } catch {}
+  const kind = document.querySelector('input[name=kind]:checked').value;
+
+  go.disabled = true; go.textContent = 'Looking up…';
+  let r;
+  try {
+    r = await fetch(`/api/lookup?code=${encodeURIComponent(code)}&kind=${kind}&whId=${encodeURIComponent(wh)}`).then(x => x.json());
+  } catch {
+    r = {error: "Can't reach the local server. Start it with run.bat."};
+  }
+  go.disabled = false; go.textContent = 'Look up';
+  if (r.error) { out.innerHTML = `<div class="alert" role="alert">${esc(r.error)}</div>`; return; }
+
+  cur = r;
+  out.innerHTML = render(r, r.code || code);
+  document.querySelectorAll('input[name=lvl]').forEach(el => el.onchange = () => {
+    $('#pl').value = JSON.stringify(el.value === 'po' ? r.altPayload : r.payload, null, 2);
+  });
+  $('#copy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('#pl').value); $('#copy').textContent = 'Copied'; }
+    catch { $('#copy').textContent = 'Copy failed'; }
+    setTimeout(() => { const b = $('#copy'); if (b) b.textContent = 'Copy'; }, 1500);
+  };
+  if ($('#push')) $('#push').onclick = onPush;
+};
+
+// two-step push instead of a browser confirm: first click arms, second sends
+let armTimer = null;
+function onPush() {
+  const btn = $('#push');
+  let payload;
+  try { payload = JSON.parse($('#pl').value); }
+  catch (e) { showResult({cls: 'bad', word: 'INVALID', why: "The payload isn't valid JSON.", detail: e.message}); return; }
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = `Confirm push to warehouse ${payload.whId}`;
+    clearTimeout(armTimer);
+    armTimer = setTimeout(disarm, 5000);
+    return;
+  }
+  disarm();
+  doPush(payload);
+}
+function disarm() {
+  const btn = $('#push');
+  if (!btn) return;
+  btn.classList.remove('armed');
+  btn.textContent = `Push ${cur.type} ack`;
+}
+
+// what the stamp says comes from the status read back after the push —
+// a 200 from these endpoints doesn't prove anything changed
+function outcome(type, r, since) {
+  if (r.error || !r.status || r.status >= 400) return {cls: 'bad', word: 'REJECTED', why: r.status >= 500
+      ? 'cincout hit an error and nothing was acked. Check the warnings on the left, then GRN_ACK_FAILED in the cincout logs.'
+      : 'cincout rejected the ack. The reason is in the raw response.'};
+  const fresh = t => t && Date.parse(t) >= since - 120000;
+  if (type === 'GRN') {
+    const g = r.after?.grn;
+    if (g?.status === 'ACKED' || g?.status === 'PARTIAL_ACKED') {
+      if (g.updatedAt && !fresh(g.updatedAt)) return {cls: 'warn', word: 'NO CHANGE', why: 'This GRN was already acked before the push.'};
+      return g.status === 'ACKED'
+        ? {cls: '', word: 'ACKED', why: 'Every GRN line is acked.'}
+        : {cls: '', word: 'PART ACKED', why: 'Some GRN lines are acked. The rest are still waiting.'};
+    }
+    return {cls: 'warn', word: 'NO CHANGE', why: `Accepted, but the GRN is still ${g?.status || 'missing'}. Check the session's grnAckByAPI flag.`};
+  }
+  const o = r.after?.orders?.[0], gins = r.after?.gins || [];
+  const touched = [o, ...gins].some(x => x && fresh(x.updatedAt));
+  if (o?.ginStatus === 'ACKED' && touched) {
+    return gins.some(g => g.status === 'REVERSAL_RECEIVED')
+      ? {cls: '', word: 'SHORT ACKED', why: 'Acked with a short issue. The shortfall is being unpicked.'}
+      : {cls: '', word: 'ACKED', why: 'The order and its GIN are acked.'};
+  }
+  if (o?.ginStatus === 'ACKED') return {cls: 'warn', word: 'NO CHANGE', why: 'This order was already acked before the push.'};
+  return {cls: 'warn', word: 'NO CHANGE', why: `Accepted, but nothing changed (order is ${o?.ginStatus || 'unknown'}). Check ginAckByApi, and that uom and skuCode match the GIN lines.`};
+}
+
+function afterFacts(type, after) {
+  const row = (k, v) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
+  if (!after) return '';
+  if (type === 'GRN') {
+    const lines = after.lines || [];
+    const counts = {};
+    lines.forEach(l => { counts[l.status] = (counts[l.status] || 0) + 1; });
+    return row('GRN', pill(after.grn?.status)) +
+      row('Lines', Object.entries(counts).map(([s, n]) => `${n} ${pill(s)}`).join(' ') || 'None');
+  }
+  return row('Order', pill(after.orders?.[0]?.ginStatus)) +
+    row('GINs', (after.gins || []).map(g => pill(g.status)).join(' ') || 'None');
+}
+
+function showResult(o, r) {
+  const raw = r ? (r.error || r.body || '(empty body)') : o.detail;
+  $('#res').innerHTML = `<section class="act-sec result" role="status">
+    <div class="result-top">
+      <div><h4>${esc(o.why)}</h4>${r ? `<p>HTTP ${esc(r.status ?? 'no response')}, just now</p>` : ''}</div>
+      <div class="stamp ${o.cls}"><strong>${o.word}</strong><small>${esc(stampTime())}</small></div>
+    </div>
+    ${r && !r.error ? `<dl class="after">${afterFacts(cur.type, r.after)}</dl>` : ''}
+    <details><summary>Raw response</summary><pre>${esc(raw)}${r && !r.error ? '\n\n' + esc(r.verifyError || JSON.stringify(r.after, null, 2)) : ''}</pre></details>
+  </section>`;
+}
+
+async function doPush(payload) {
+  const btn = $('#push'), since = Date.now();
+  btn.disabled = true; btn.textContent = 'Pushing…';
+  let r;
+  try {
+    r = await fetch('/api/push', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({type: cur.type, payload})}).then(x => x.json());
+  } catch {
+    r = {error: "Can't reach the local server."};
+  }
+  btn.disabled = false; btn.textContent = `Push ${cur.type} ack`;
+  showResult(outcome(cur.type, r, since), r);
+  if (window.matchMedia('(max-width: 1060px)').matches) $('#res').scrollIntoView({block: 'nearest'});
+}
+</script>
+</body>
+</html>

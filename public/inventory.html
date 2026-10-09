@@ -1,0 +1,1714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inventory Fill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell">
+<!--#rail-->
+<div class="stage">
+<main>
+  <div class="page-head">
+    <div>
+      <h2 id="mode-title">Test case</h2>
+      <p id="mode-lede">Set up exact stock for a test. Pick bins, SKUs and batches, and download a sheet that passes the uploader's checks.</p>
+    </div>
+  </div>
+
+  <!-- build ------------------------------------------------------------------ -->
+  <section id="v-case">
+    <div class="panel case-bar">
+      <label class="field"><span>Test case name</span><input type="text" id="c-name" placeholder="e.g. fefo-two-batches" spellcheck="false"></label>
+      <div class="field"><span>Operation</span>
+        <div class="seg" role="radiogroup" aria-label="Operation">
+          <input type="radio" name="c-op" id="cop-a" value="APPEND" checked><label for="cop-a">Append</label>
+          <input type="radio" name="c-op" id="cop-r" value="RESET"><label for="cop-r">Reset</label></div></div>
+      <label class="field"><span>HU prefix</span><input type="text" id="c-prefix" spellcheck="false"></label>
+      <label class="field"><span>Pallet code length</span><input type="number" id="c-len" min="2" max="40" step="1"></label>
+      <label class="field"><span>Pallet HU kind</span><select id="c-kind" data-cb-empty="Not loaded"></select></label>
+      <p class="hulen" id="c-len-h" aria-live="polite"></p>
+      <label class="field"><span>Near-expiry warning (days)</span><input type="number" id="c-shelf" value="30" min="0"></label>
+    </div>
+
+    <div class="binfilter" role="group" aria-label="Bin search filter">
+      <span class="bf-label">Bin search</span>
+      <label>Area <select id="bf-area"><option value="">All areas</option></select></label>
+      <label>Zone <select id="bf-zone"><option value="">All zones</option></select></label>
+      <label class="bf-check"><input type="checkbox" id="bf-empty"> Empty bins only</label>
+      <span class="bf-count" id="bf-count"></span>
+    </div>
+
+    <h3 class="presets-title" id="presets-title">Add rows from a preset</h3>
+    <div class="presets" role="group" aria-labelledby="presets-title">
+      <button type="button" class="preset" data-preset="single"><b>Specific stock</b><span>This SKU, batch and quantity in this bin.</span></button>
+      <button type="button" class="preset" data-preset="fefo"><b>FEFO / batch mix</b><span>One SKU across batches with different expiries.</span></button>
+      <button type="button" class="preset" data-preset="pallets"><b>Multi-pallet</b><span>Several pallets of a SKU in one pallet bin.</span></button>
+      <button type="button" class="preset" data-preset="status"><b>Bucket / status</b><span>Damaged, PRE-GRN or POST-GIN stock.</span></button>
+      <button type="button" class="preset" data-preset="many"><b>Across many SKUs</b><span>Repeat a setup for N SKUs in a zone.</span></button>
+    </div>
+    <div id="preset-form"></div>
+
+    <div class="panel">
+      <div class="panel-sec grid-head">
+        <h3 style="margin:0">Rows <small id="c-count"></small></h3>
+        <div class="tools">
+          <button type="button" class="btn small" id="c-add">Add a blank row</button>
+          <label class="btn small" for="c-import">Load a sheet</label><input type="file" id="c-import" accept=".xlsx" hidden>
+          <button type="button" class="btn small" id="c-clear">Clear rows</button>
+        </div>
+      </div>
+      <div class="grid-wrap"><table class="grid" id="c-grid"></table></div>
+      <datalist id="dl-bins" data-filtered data-limit="80"></datalist><datalist id="dl-skus" data-filtered data-limit="80"></datalist>
+    </div>
+
+    <div class="case-foot" id="c-foot"></div>
+  </section>
+
+  <section id="v-build" class="build" hidden>
+    <form id="settings" class="panel settings" autocomplete="off">
+      <div class="panel-sec">
+        <h3>Fill settings</h3>
+        <div class="field">
+          <span>Target occupancy per zone</span>
+          <div class="target">
+            <input type="range" id="t-range" min="5" max="100" step="1" value="65" aria-label="Target occupancy">
+            <div class="num"><input type="number" id="t-num" min="1" max="100" value="65" aria-label="Target occupancy percent"></div>
+          </div>
+          <small>Zones already above the target get nothing.</small>
+        </div>
+        <div class="field">
+          <span>Areas to fill</span>
+          <div class="checks-row">
+            <label><input type="checkbox" name="area" value="INVENTORY" checked> Inventory</label>
+            <label><input type="checkbox" name="area" value="OVERFLOW"> Overflow</label>
+          </div>
+        </div>
+        <div class="field">
+          <span>Operation</span>
+          <div class="seg" role="radiogroup" aria-label="Operation">
+            <input type="radio" name="op" id="op-a" value="APPEND" checked><label for="op-a">Append</label>
+            <input type="radio" name="op" id="op-r" value="RESET"><label for="op-r">Reset</label>
+          </div>
+          <small>Fills only use empty bins, so both add the same stock.</small>
+        </div>
+        <div class="pair">
+          <label class="field"><span>HU prefix</span><input type="text" id="prefix" spellcheck="false"></label>
+          <label class="field"><span>Pallet HU kind</span><select id="kind" data-cb-empty="Not loaded"></select></label>
+        </div>
+        <label class="field"><span>Pallet code length</span><input type="number" id="len" min="2" max="40" step="1">
+          <small class="hulen" id="len-h" aria-live="polite"></small></label>
+        <label class="field"><span>Minimum shelf life left (days)</span><input type="number" id="shelf" value="180" min="0"></label>
+      </div>
+      <div class="panel-sec">
+        <details class="adv">
+          <summary>Advanced</summary>
+          <label class="field"><span>Only SKUs matching</span><input type="text" id="inc" placeholder="^\d{8}(-\d+)?$" spellcheck="false"><small>A regular expression. Leave blank for all.</small></label>
+          <label class="field"><span>Skip SKUs matching</span><input type="text" id="exc" spellcheck="false"></label>
+          <div class="pair">
+            <label class="field"><span>Bucket</span><select id="bucket"><option data-sub="sellable stock">Good</option><option data-sub="damaged bucket">Damaged</option></select></label>
+            <label class="field"><span>Inclusion status</span><select id="incl"><option data-sub="counted in stock">INCLUDED</option><option data-sub="received, not yet GRN-ed">PRE-GRN</option><option data-sub="issued, not yet shipped">POST-GIN</option></select></label>
+          </div>
+          <div class="pair">
+            <label class="field"><span>Batches per SKU</span><input type="number" id="maxb" value="6" min="1"></label>
+            <label class="field"><span>Max eaches per bin</span><input type="number" id="maxe" value="600" min="1"></label>
+          </div>
+          <div class="pair">
+            <label class="field"><span>Max kg per bin</span><input type="number" id="maxkg" value="35" min="1"><small>Used when the bin type has no weight limit.</small></label>
+            <label class="field"><span>Seed</span><input type="number" id="seed" value="20260916"><small>Same seed, same sheet.</small></label>
+          </div>
+          <label class="field"><span>Encarta principal id</span><input type="text" id="principal" spellcheck="false" placeholder="Worked out from stock"></label>
+        </details>
+      </div>
+      <div class="panel-sec">
+        <div class="tmpl"><span>Columns: <b id="tmpl-name">standard</b></span>
+          <label class="btn small" for="tmpl-file">Use my template</label><input type="file" id="tmpl-file" accept=".xlsx" hidden></div>
+      </div>
+      <div class="panel-sec"><button class="btn primary big" id="go-build" disabled>Build fill</button></div>
+    </form>
+
+    <div id="build-out"><div class="loading">Loading the warehouse…</div></div>
+  </section>
+
+  <!-- check ------------------------------------------------------------------ -->
+  <section id="v-check" class="narrow" hidden>
+    <div class="panel pick" id="k-pick">
+      <div class="panel-sec">
+        <div class="act-head"><h3>Checks to run<small class="pick-count">Loading…</small></h3>
+          <div class="pick-presets" role="group" aria-label="Select checks">
+            <button type="button" class="link" data-preset="all">All</button>
+            <button type="button" class="link" data-preset="fail">Red only</button>
+            <button type="button" class="link" data-preset="none">None</button></div></div>
+        <details class="pick-more"><summary>Choose checks</summary>
+          <div class="pick-groups"></div>
+          <p class="hint pick-legend"><span class="lv fail"></span>blocks the upload, or the next putaway or drop <span class="lv warn"></span>works, but against best fit <span class="lv info"></span>information only.
+            A check that's off flags no rows here or in the checked sheet. Your choice is remembered.</p></details>
+        <div class="pick-rerun"></div>
+      </div>
+    </div>
+    <label class="drop" id="drop-check" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-check">
+      <b>Drop an Append/Reset sheet here, or choose a file</b>
+      <span>Every row is checked against this warehouse's live master data and the stock in its bins right now. Nothing is uploaded.</span></label>
+    <div id="check-out"></div>
+  </section>
+
+  <!-- consolidate ------------------------------------------------------------ -->
+  <section id="v-consolidate" class="narrow" hidden>
+    <div class="seg" role="radiogroup" aria-label="What to consolidate" style="margin-bottom:12px">
+      <input type="radio" name="cs-kind" id="csk-e" value="eaches" checked><label for="csk-e">Shelf bins (eaches, cases)</label>
+      <input type="radio" name="cs-kind" id="csk-p" value="pallets"><label for="csk-p">Pallets</label>
+      <input type="radio" name="cs-kind" id="csk-r" value="relocate"><label for="csk-r">Bins under % full</label></div>
+
+    <div id="cs-eaches">
+      <div class="panel">
+        <div class="panel-sec">
+          <div class="act-head"><h3>Where to merge<small id="ce-count">Loading areas…</small></h3>
+            <button type="button" class="link" id="ce-reload">Reload areas</button></div>
+          <div id="ce-scope" class="ce-scope"></div>
+          <p class="hint" style="margin:8px 0 0">Stock is only poured between bins of the areas and zones ticked here. Shelf bins only.</p>
+        </div>
+        <div class="panel-sec">
+          <div class="act-head"><h3>Bin types<small id="ce-bt-count"></small></h3></div>
+          <div id="ce-types" class="ce-types"></div>
+          <p class="hint" style="margin:8px 0 0">Only bins of the ticked types give or take stock, so a pour can go between two ticked types.</p>
+        </div>
+        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+          <fieldset class="ce-units"><legend>Move</legend>
+            <label class="bf-check"><input type="checkbox" id="ce-u-l0" checked> Eaches (L0)</label>
+            <label class="bf-check"><input type="checkbox" id="ce-u-l2"> Cases (L2), whole</label></fieldset>
+          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="ce-below" value="100" min="5" max="100" step="5"
+            title="A bin at or above this fill (of its own volume) is never emptied, but can still take stock. 100 = any bin."></label>
+          <label class="field" style="max-width:200px"><span>Fill bins up to (% of volume)</span><input type="number" id="ce-fill" value="100" min="10" max="100" step="5"></label>
+          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="ce-cross"> Pour between zones of the same area</label>
+          <label class="bf-check" style="padding-bottom:8px" title="WMS putaway only checks volume. Many shelf bins already hold more than their max kg."><input type="checkbox" id="ce-kg" checked> Keep bins within their max kg</label>
+          <button type="button" class="btn primary" id="ce-go">Find bins to empty</button>
+        </div>
+        <div class="panel-sec"><p class="hint" style="margin:0">Each pour is checked against the receiving bin's volume (bin type volume vs. quantity × L0 volume, the way putaway fills shelves),
+          its max weight if ticked, and its multi-SKU / multi-batch / max SKU / max SKU-batch rules counting what's already in it. Cases move whole, sized by their L2 volume.
+          A bin holding a unit that isn't ticked, bins with locked stock, fixed bins, and SKUs without a volume for their unit are left alone. Bin types whose volume looks unset (10,000 L or more) are skipped. Reads the stock now; nothing is moved.</p></div>
+      </div>
+      <div id="ce-out"></div>
+    </div>
+
+    <div id="cs-pallets" hidden>
+    <div class="panel"><div class="panel-sec" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn primary" id="cs-go">Find what can be freed</button>
+      <p class="hint" style="margin:0;flex:1 1 300px">Reads the stock in this warehouse's storage bins right now. Nothing is moved or changed. Pallets a task has locked are left out of the plan.</p>
+    </div></div>
+    <div id="cs-out"></div>
+    </div>
+
+    <div id="cs-relocate" hidden>
+      <div class="panel">
+        <div class="panel-sec">
+          <div class="act-head"><h3>Empty bins of<small id="cr-from-count"></small></h3>
+            <button type="button" class="link" id="cr-reload">Reload areas</button></div>
+          <div id="cr-from" class="cr-pick"></div>
+        </div>
+        <div class="panel-sec">
+          <div class="act-head"><h3>Into bins of<small id="cr-to-count"></small></h3></div>
+          <div id="cr-to" class="cr-pick"></div>
+          <p class="hint" style="margin:8px 0 0">Every inventory area, pallet and shelf bins. Tick bin types inside a zone, so ZONE-1 3D bins and ZONE-2 1D bins don't also pull in ZONE-1 1D bins.
+            A bin ticked on both sides can give or take.</p>
+        </div>
+        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="cr-below" value="5" min="0.1" max="100" step="0.5"></label>
+          <label class="field" style="max-width:260px"><span>Empty bins can receive</span><select id="cr-empty">
+            <option value="smaller" selected>Only smaller ones (frees space)</option><option value="any">Any (e.g. to clear a zone)</option><option value="none">No</option></select></label>
+          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="cr-kg" checked> Keep bins within their max kg</label>
+          <button type="button" class="btn primary" id="cr-go">Find bins to empty</button>
+        </div>
+        <div class="panel-sec"><p class="hint" style="margin:0">How full: a pallet bin counts full pallets (the SKU's L3, cases per pallet) over its pallet positions, so a 3D bin with 2 cases of a
+          48-case SKU is 1.4% full. A shelf bin counts stock volume over bin volume. A pallet's cases go onto a pallet of the same SKU and batch that has room, or the pallet moves whole
+          into a free position; pallet stock only goes to pallet bins, shelf stock only to shelf bins. Every step is checked against bin and pallet mixing rules (multi-SKU, multi-batch,
+          max SKU), pallet positions, a full pallet, max kg, the search table for another zone, task locks and fixed bins. Reads the stock now; nothing is moved.</p></div>
+      </div>
+      <div id="cr-out"></div>
+    </div>
+  </section>
+
+  <!-- masters ---------------------------------------------------------------- -->
+  <section id="v-masters" class="narrow" hidden>
+    <div class="panel pick" id="m-pick">
+      <div class="panel-sec">
+        <div class="act-head"><h3>Checks to run<small class="pick-count">Loading…</small></h3>
+          <div class="pick-presets" role="group" aria-label="Select checks">
+            <button type="button" class="link" data-preset="all">All</button>
+            <button type="button" class="link" data-preset="fail">Red only</button>
+            <button type="button" class="link" data-preset="none">None</button></div></div>
+        <div class="pick-groups"></div>
+        <p class="hint pick-legend"><span class="lv fail"></span>encarta rejects it, or it goes in as wrong data <span class="lv warn"></span>suspicious <span class="lv info"></span>information only.
+          A check that's off flags no rows in the checked sheet and adds nothing to the fix sheet. Your choice is remembered.</p>
+        <div class="pick-rerun"></div>
+      </div>
+    </div>
+    <label class="drop" id="drop-masters" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-masters" multiple>
+      <b>Drop SKU, batch and/or production batch master sheets here, or choose files</b>
+      <span>Drop them together to check them against each other: SKUs in the SKU file count for the batch file, and batches for the production file. Everything else is checked against encarta for this warehouse's principal. Nothing is uploaded.</span></label>
+    <div id="masters-out"></div>
+  </section>
+
+  <!-- verify ----------------------------------------------------------------- -->
+  <section id="v-verify" class="narrow" hidden>
+    <div class="panel"><div class="panel-sec">
+      <h3>After you upload in the panel</h3>
+      <label class="field" style="max-width:280px"><span>HU prefix used</span><input type="text" id="v-prefix" spellcheck="false"><small>Finds empty pallets a failed upload left behind.</small></label>
+      <div id="verify-last"></div>
+    </div></div>
+    <label class="drop" id="drop-verify" style="margin-top:16px"><input type="file" accept=".xlsx" id="file-verify">
+      <b>Drop the sheet you uploaded, or choose a file</b>
+      <span>Each line is compared with the stock now in those bins.</span></label>
+    <div id="verify-out"></div>
+  </section>
+</main>
+</div>
+</div>
+
+<script src="/rail.js"></script>
+<script src="/combo.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => Number(n).toLocaleString();
+const state = {snap: null, token: null, prefix: null};
+
+try { $('#wh').value = localStorage.getItem('whId') || '__WH__'; } catch { $('#wh').value = '__WH__'; }
+const wh = () => $('#wh').value.trim();
+// remember the warehouse as soon as it's typed, and its principal override per warehouse
+const loadPrincipal = () => { try { $('#principal').value = localStorage.getItem('principal:' + wh()) || ''; } catch {} };
+loadPrincipal();
+$('#wh').addEventListener('input', () => { if (/^\d+$/.test(wh())) { try { localStorage.setItem('whId', wh()); } catch {} loadPrincipal(); } });
+$('#principal').addEventListener('input', () => { try { const p = $('#principal').value.trim(); p ? localStorage.setItem('principal:' + wh(), p) : localStorage.removeItem('principal:' + wh()); } catch {} });
+const qs = extra => new URLSearchParams({whId: wh(), ...($('#principal').value.trim() ? {principalId: $('#principal').value.trim()} : {}), ...extra});
+
+// pallet HU codes are the prefix plus a zero-padded counter, padded out to the chosen total length
+const huDigits = (prefix, len) => Math.max(1, (Number(len) || prefix.length + 5) - prefix.length);
+function huLenHint(prefix, len, el, need = 0) {
+  const p = prefix.trim(), want = Number(len) || p.length + 5, d = huDigits(p, want), room = 10 ** d - 1;
+  if (!p) { el.textContent = 'Set an HU prefix to see what the pallet codes will look like.'; return; }
+  const warn = [];
+  if (want < p.length + 1) warn.push(`That's shorter than the prefix allows. The shortest is ${p.length + 1} characters.`);
+  if (need > room) warn.push(`${fmt(need)} pallets need more than ${d} digit${d > 1 ? 's' : ''}, so later codes would run longer. Make it at least ${p.length + String(need).length}.`);
+  el.innerHTML = `Pallet codes will look like <span class="rl sm">${esc(p + '1'.padStart(d, '0'))}</span>
+    <b>${p.length + d} characters</b>: the prefix (${p.length}) and a ${d}-digit counter, room for ${fmt(room)} pallet${room === 1 ? '' : 's'}${need ? `. ${fmt(need)} used so far` : ''}.`
+    + warn.map(w => `<span class="warn-line">${esc(w)}</span>`).join('');
+}
+
+async function api(path, opts = {}) {
+  let r;
+  try { r = await fetch(path, opts); } catch { throw new Error("Can't reach the local server. Start it with run.bat."); }
+  const body = await r.json().catch(() => ({error: `HTTP ${r.status}`}));
+  if (!r.ok || body.error) throw new Error(body.error || `HTTP ${r.status}`);
+  return body;
+}
+
+// ---- modes ----------------------------------------------------------------------
+const MODES = {"case":["Test case","Set up exact stock for a test. Pick bins, SKUs and batches, and download a sheet that passes the uploader's checks."],"build":["Bulk fill","Fill a warehouse to a target occupancy using only the SKUs, batches and bins it already has."],"check":["Check a sheet","Find every problem in an Append/Reset sheet before the upload burns its HU codes."],"verify":["Verify an upload","Compare what you uploaded with the stock now in those bins, and find pallets a failed upload left behind."],"consolidate":["Consolidate stock","Free bins in the stock as it is now. Shelf bins: empty them into others by moving eaches or whole cases, by bin type, checked against bin volume and mixing rules. Pallets: merge partial pallets and empty bins by moving whole pallets. Bins under % full: empty nearly empty bins of any inventory zone into the zones and bin types you pick."],"masters":["Check masters","Check SKU, batch and production batch master sheets before they go into encarta, including the batch code rule: year, month, price (26JAN499)."]};
+function showMode(m) {
+  if (!MODES[m]) m = 'case';
+  for (const v of Object.keys(MODES)) $('#v-' + v).hidden = v !== m;
+  $('#mode-title').textContent = MODES[m][0];
+  $('#mode-lede').textContent = MODES[m][1];
+  document.title = MODES[m][0] + ' · UAT desk';
+  document.querySelectorAll('.rail-nav a[data-nav]').forEach(a => a.dataset.nav === m ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+  if (location.hash.slice(1) !== m) history.replaceState(null, '', '#' + m);
+  if (m === 'verify') renderVerifyLast();
+  if (m === 'build' && !state.snap) loadSnapshot();
+}
+
+// ---- warehouse snapshot ---------------------------------------------------------
+async function loadSnapshot(refresh) {
+  if (!/^\d+$/.test(wh())) { $('#build-out').innerHTML = '<div class="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; return; }
+  try { localStorage.setItem('whId', wh()); } catch {}
+  $('#go-build').disabled = true;
+  $('#build-out').innerHTML = '<div class="loading">Loading bins, search table, stock and master data for this warehouse…</div>';
+  try {
+    state.snap = await api('/api/inv/snapshot?' + qs(refresh ? {refresh: '1'} : {}));
+  } catch (e) {
+    $('#build-out').innerHTML = `<div class="alert">${esc(e.message)}</div>`; return;
+  }
+  const s = state.snap;
+  $('#prefix').value = s.suggestedPrefix;
+  let len = null; try { len = Number(localStorage.getItem('uatdesk.huLen')) || null; } catch {}
+  $('#len').value = len || s.suggestedPrefix.length + 5;
+  bulkLenHint();
+  $('#v-prefix').value = $('#v-prefix').value || s.suggestedPrefix;
+  const pallets = s.kinds.filter(k => /PALLET/i.test(k));
+  $('#kind').innerHTML = (pallets.length ? pallets : ['PALLET']).map(k => `<option ${k === 'PALLET' ? 'selected' : ''}>${esc(k)}</option>`).join('');
+  $('#tmpl-name').textContent = s.template.custom ? 'your template' : 'standard';
+  $('#go-build').disabled = false;
+  $('#build-out').innerHTML = snapshotHtml(s);
+  $('#reload').onclick = () => loadSnapshot(true);
+}
+
+function sessionsHtml(sessions) {
+  if (!sessions?.length) return '';
+  const byKind = {};
+  sessions.forEach(x => { (byKind[x.kind] ||= []).push(x.code); });
+  return `<div class="callout warn"><b>${sessions.length} open session${sessions.length > 1 ? 's' : ''} will block the upload.</b>
+    Close them, or tick Force update when you upload in the panel.
+    <ul>${Object.entries(byKind).map(([k, c]) => `<li>${esc(k)}: ${esc(c.slice(0, 6).join(', '))}${c.length > 6 ? ` and ${c.length - 6} more` : ''}</li>`).join('')}</ul></div>`;
+}
+
+function snapshotHtml(s) {
+  const rows = s.areas.map(a => {
+    const pct = a.bins ? a.occupied / a.bins * 100 : 0;
+    return `<tr><td class="key">${esc(a.area)}</td><td>${esc(a.type)}</td><td class="num">${fmt(a.zones)}</td><td class="num">${fmt(a.bins)}</td>
+      <td class="num">${fmt(a.occupied)}</td><td><div class="occ"><div class="bar"><i class="now" style="width:${pct}%"></i></div><span>${pct.toFixed(0)}%</span></div></td></tr>`;
+  }).join('');
+  return `<div class="panel">
+    <div class="panel-sec"><div class="act-head" style="margin:0 0 14px"><h3 style="margin:0">Warehouse today</h3>
+      <button type="button" class="btn small" id="reload">Reload</button></div>
+      <dl class="stats">
+        <div><dt>Active SKUs with a class</dt><dd>${fmt(s.skus.classified)}</dd></div>
+        <div><dt>Batches</dt><dd>${fmt(s.batches)}</dd></div>
+        <div><dt>HU codes in use</dt><dd>${fmt(s.huCodes)}</dd></div>
+        <div><dt>Open sessions</dt><dd>${fmt(s.sessions.length)}</dd></div>
+      </dl></div>
+    ${s.sessions.length || s.warnings.length ? `<div class="panel-sec">${sessionsHtml(s.sessions)}${s.warnings.map(w => `<div class="callout warn">${esc(w)}</div>`).join('')}</div>` : ''}
+    <div class="panel-sec"><div class="table-wrap"><table>
+      <thead><tr><th>Area</th><th>Type</th><th class="num">Zones</th><th class="num">Bins</th><th class="num">Occupied</th><th>Occupancy</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>
+    <div class="panel-sec"><p class="hint" style="margin:0">Principal ${esc(s.principalId)}. Weights read as ${s.weightUnit === 'g' ? 'grams' : 'kilograms'}. Loaded ${new Date(s.loadedAt).toLocaleTimeString()}.
+      Set the target on the left and build the fill.</p></div>
+  </div>`;
+}
+
+$('#wh').addEventListener('change', () => { state.token = null; state.snap = null; if (!$('#v-build').hidden) loadSnapshot(); });
+
+// ---- settings ------------------------------------------------------------------
+const bulkLenHint = () => huLenHint($('#prefix').value, $('#len').value, $('#len-h'));
+$('#prefix').addEventListener('input', bulkLenHint);
+$('#len').addEventListener('input', () => { bulkLenHint(); try { localStorage.setItem('uatdesk.huLen', $('#len').value); } catch {} });
+$('#t-range').oninput = () => { $('#t-num').value = $('#t-range').value; };
+$('#t-num').oninput = () => { $('#t-range').value = $('#t-num').value; };
+$('#tmpl-file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const r = await api('/api/inv/template?' + qs(), {method: 'POST', body: await f.arrayBuffer()});
+    $('#tmpl-name').textContent = `your template (${r.headers.length} columns)`;
+  } catch (err) { alert(err.message); }
+  e.target.value = '';
+};
+
+$('#settings').onsubmit = async e => {
+  e.preventDefault();
+  const areas = [...document.querySelectorAll('input[name=area]:checked')].map(x => x.value);
+  if (!areas.length) { alert('Pick at least one area to fill.'); return; }
+  const o = {
+    target: Number($('#t-num').value) / 100, areaTypes: areas,
+    op: document.querySelector('input[name=op]:checked').value,
+    huPrefix: $('#prefix').value.trim(), huLength: Number($('#len').value) || undefined, huKind: $('#kind').value, shelfLifeDays: Number($('#shelf').value),
+    skuInclude: $('#inc').value.trim(), skuExclude: $('#exc').value.trim(), bucket: $('#bucket').value, inclusion: $('#incl').value,
+    maxBatchesPerSku: Number($('#maxb').value), maxEachesPerBin: Number($('#maxe').value), maxKgPerBin: Number($('#maxkg').value), seed: Number($('#seed').value),
+  };
+  const btn = $('#go-build');
+  btn.disabled = true; btn.textContent = 'Building…';
+  try {
+    const r = await api('/api/inv/build?' + qs(), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(o)});
+    state.token = r.token; state.prefix = o.huPrefix; state.target = o.target;
+    $('#build-out').innerHTML = buildHtml(r, o);
+    $('#dl') && ($('#dl').onclick = download);
+    $('#to-verify') && ($('#to-verify').onclick = () => showMode('verify'));
+    $('#back-snap').onclick = () => { $('#build-out').innerHTML = snapshotHtml(state.snap); $('#reload').onclick = () => loadSnapshot(true); };
+  } catch (err) {
+    $('#build-out').innerHTML = `<div class="alert">${esc(err.message)}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Build fill';
+};
+
+// 2,3,4,5,9 -> "2–5, 9"
+const rowRuns = rows => { const out = []; for (const x of rows) { const l = out[out.length - 1]; if (l && x === l[1] + 1) l[1] = x; else out.push([x, x]); }
+  return out.map(([a, b]) => a === b ? a : b === a + 1 ? `${a}, ${b}` : `${a}–${b}`).join(', '); };
+function checklistHtml(v) {
+  const order = {fail: 0, warn: 1, info: 2, pass: 3};
+  const items = [...v.checks].sort((a, b) => order[a.status] - order[b.status]);
+  const li = c => `<li class="${c.status}"><span class="mark">${c.status === 'fail' || c.status === 'warn' ? '!' : c.status === 'pass' ? '✓' : 'i'}</span><div>${esc(c.title)}
+    ${(c.status === 'fail' || c.status === 'warn') && c.count && c.rows.length ? `<small class="rows">${c.count > 1 ? 'Rows' : 'Row'} ${rowRuns(c.rows)}${c.count > c.rows.length ? ` … (${fmt(c.count)} in all)` : ''}</small>` : ''}
+    ${(c.status === 'fail' || c.status === 'warn') && c.count && !c.rows.length ? `<small class="rows">${fmt(c.count)} missing</small>` : ''}
+    ${c.detail ? `<small>${esc(c.detail)}</small>` : ''}</div></li>`;
+  const bad = items.filter(c => c.status !== 'pass'), good = items.filter(c => c.status === 'pass');
+  return `<div class="verdict">${v.failed ? `<span class="pill bad">${v.failed} failed</span>` : `<span class="pill ok">${v.warned ? 'No blockers' : 'All checks pass'}</span>`}${v.warned ? ` <span class="pill warn">${v.warned} warning${v.warned > 1 ? 's' : ''}</span>` : ''}
+      <span class="hint" style="margin:0">${v.passed} of ${v.checks.filter(c => c.status !== 'info').length} checks pass</span></div>
+    ${bad.length ? `<ul class="checklist" style="margin-top:10px">${bad.map(li).join('')}</ul>` : ''}
+    <details style="margin-top:10px"><summary>Passing checks (${good.length})</summary><ul class="checklist" style="margin-top:6px">${good.map(li).join('')}</ul></details>`;
+}
+
+function buildHtml(r, o) {
+  const t = r.totals, v = r.validation;
+  const zones = r.summary.map(z => `<tr><td class="key">${esc(z.zone)}</td><td>${esc(z.area)}</td><td>${z.huType === 'PALLET' ? 'Pallet' : 'Bin'}</td>
+    <td class="num">${fmt(z.bins)}</td><td class="num">${fmt(z.occupiedNow)}</td><td class="num">${fmt(z.newBins)}</td>
+    <td><div class="occ"><div class="bar"><i class="now" style="width:${z.nowPct}%"></i><i class="new" style="width:${z.finalPct - z.nowPct}%"></i></div><span>${z.finalPct.toFixed(0)}%</span></div></td></tr>`).join('');
+  const preview = r.rows.slice(0, 200).map(x => `<tr><td class="num">${x.row}</td><td class="bin">${esc(x.bin)}</td><td class="code">${esc(x.hu)}</td><td class="code">${esc(x.sku)}</td>
+    <td class="num">${fmt(x.qty)}</td><td>${esc(x.uom)}</td><td class="code">${esc(x.batch)}</td><td>${esc(x.mfg)}</td><td>${esc(x.exp)}</td></tr>`).join('');
+  const skipZ = r.skipped.zones.map(z => `<li>${esc(z.zone)} <small>(${esc(z.area)}, ${fmt(z.bins)} bins)</small>: ${esc(z.why)}</li>`).join('');
+  const skipS = r.skipped.skus.map(s => `<li>${esc(s.why)}: ${fmt(s.count)} SKU${s.count === 1 ? '' : 's'} <small>e.g. ${esc(s.sample.slice(0, 6).join(', '))}</small></li>`).join('');
+  return `<div class="panel">
+    <div class="panel-sec"><div class="act-head" style="margin:0 0 14px"><h3 style="margin:0">Fill to ${Math.round(o.target * 100)}%<small>${esc(o.op.toLowerCase())}, prefix ${esc(o.huPrefix)}</small></h3>
+      <button type="button" class="link back" id="back-snap">Back to overview</button></div>
+      <dl class="stats">
+        <div><dt>Rows</dt><dd>${fmt(t.rows)}</dd></div><div><dt>Bins filled</dt><dd>${fmt(t.bins)}</dd></div>
+        <div><dt>SKUs</dt><dd>${fmt(t.skus)}</dd></div><div><dt>Batches</dt><dd>${fmt(t.batches)}</dd></div>
+        <div><dt>New pallet HUs</dt><dd>${fmt(t.newHUs)}</dd></div>
+      </dl>
+      ${r.huCodes ? `<p class="hint" style="margin:12px 0 0">Pallet codes are ${r.huCodes.length} characters, <span class="mono">${esc(r.huCodes.first)}</span> to <span class="mono">${esc(r.huCodes.last)}</span>.</p>` : ''}</div>
+    <div class="panel-sec">
+      ${t.rows ? `<div class="download">
+        <button type="button" class="btn primary big" id="dl" ${v.failed ? 'disabled' : ''}>Download sheet</button>
+        <p>${v.failed ? 'Fix the failing checks below first. A failed upload burns every HU code in the sheet.'
+          : 'Upload it in the panel under Append/Reset Inventory, then come back and verify it landed.'}</p>
+        ${v.failed ? '' : '<button type="button" class="btn" id="to-verify">Verify after upload</button>'}</div>`
+        : '<div class="alert" style="margin:0">Nothing to add. Every zone is already at or above the target, or no SKU is allowed in the empty bins.</div>'}
+      ${sessionsHtml(v.sessions) ? `<div style="margin-top:14px">${sessionsHtml(v.sessions)}</div>` : ''}
+    </div>
+    <div class="panel-sec"><h3>Checks</h3>${checklistHtml(v)}</div>
+  </div>
+  <div class="panel">
+    <div class="panel-sec"><div class="act-head"><h3 style="margin:0">By zone</h3>
+      <div class="legend"><span><i class="now"></i>Stock today</span><span><i class="new"></i>Added</span></div></div>
+      ${zones ? `<div class="table-wrap"><table><thead><tr><th>Zone</th><th>Area</th><th>Holds</th><th class="num">Bins</th><th class="num">Full now</th><th class="num">Adding</th><th>After</th></tr></thead><tbody>${zones}</tbody></table></div>`
+        : '<p class="none-msg">No zone qualified.</p>'}</div>
+    ${skipZ || skipS ? `<div class="panel-sec"><h3>Left out</h3><ul class="skips">${skipZ}${skipS}</ul></div>` : ''}
+    ${preview ? `<div class="panel-sec"><details><summary>First ${Math.min(200, t.rows)} of ${fmt(t.rows)} rows</summary><div class="table-wrap" style="margin-top:10px"><table>
+      <thead><tr><th class="num">Row</th><th>Bin</th><th>HU</th><th>SKU</th><th class="num">Qty</th><th>UOM</th><th>Batch</th><th>Mfg</th><th>Expiry</th></tr></thead><tbody>${preview}</tbody></table></div></details></div>` : ''}
+  </div>`;
+}
+
+function download() {
+  const a = document.createElement('a');
+  a.href = '/api/inv/download?' + qs({token: state.token});
+  document.body.append(a); a.click(); a.remove();
+  $('#v-prefix').value = state.prefix;
+}
+
+// ---- check a sheet ---------------------------------------------------------------
+function wireDrop(zone, input, handler) {
+  const z = $(zone);
+  z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
+  z.addEventListener('dragleave', () => z.classList.remove('over'));
+  z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); if (e.dataTransfer.files[0]) handler(e.dataTransfer.files[0]); });
+  $(input).onchange = e => { if (e.target.files[0]) handler(e.target.files[0]); e.target.value = ''; };
+}
+
+const KP = makePicker($('#k-pick'), 'uatdesk.checksOff', '/api/inv/check-catalog');
+wireDrop('#drop-check', '#file-check', checkSheet);
+async function checkSheet(f) {
+  const out = $('#check-out');
+  KP.rerun([f.name], () => checkSheet(f));
+  out.innerHTML = `<div class="loading">Checking ${esc(f.name)}…</div>`;
+  try {
+    const skip = KP.kinds ? KP.kinds.flatMap(KP.offIds) : [];
+    const v = await api('/api/inv/check?' + qs({shelfLifeDays: $('#shelf').value, name: f.name, ...(skip.length ? {skip: skip.join(',')} : {})}), {method: 'POST', body: await f.arrayBuffer()});
+    out.innerHTML = `<div class="panel" style="margin-top:16px">
+      <div class="panel-sec"><h3>${esc(f.name)}<small>${fmt(v.rows)} rows, checked against stock as of ${esc(new Date(v.loadedAt).toLocaleTimeString())}${v.checksOff ? ` · ${plural(v.checksOff, 'check')} off` : ''}</small></h3>
+        ${v.checks.length ? checklistHtml(v) : '<div class="callout warn">Every check is off, so nothing was checked. Turn some on above and press Check again.</div>'}</div>
+      ${sessionsHtml(v.sessions) ? `<div class="panel-sec">${sessionsHtml(v.sessions)}</div>` : ''}
+      <div class="panel-sec"><div class="download"><button type="button" class="btn primary" id="dl-checked">Download checked sheet</button>
+          <p>Your sheet with the red and yellow rows marked and the reason on each, plus Summary, Consolidation, Moves and Pallet fill tabs.</p></div>
+        <p class="hint" style="margin:12px 0 0"><b class="t-bad">Red</b> blocks: the upload or the next putaway or drop into that bin or pallet will fail. The uploader doesn't check multi-SKU, multi-batch or capacity, so these get past it.
+          <b class="t-warn">Yellow</b> works, but goes against best fit. Row numbers are spreadsheet rows, so row 2 is the first data row.</p></div></div>
+    ${consolidationHtml(v.consolidation)}`;
+    doneDrop('#drop-check', 'Check another sheet: drop it here, or choose a file');
+    $('#dl-checked').onclick = () => {
+      const a = document.createElement('a');
+      a.href = '/api/inv/check-download?' + qs({token: v.token});
+      document.body.append(a); a.click(); a.remove();
+    };
+  } catch (e) { out.innerHTML = `<div class="alert">${esc(e.message)}</div>`; }
+}
+
+function doneDrop(sel, text) { const z = $(sel); z.classList.add('done'); z.querySelector('b').textContent = text; }
+
+// what merging partial pallets of the same SKU + batch would free, after this sheet
+const n2 = x => x === null || x === undefined ? '–' : Number(x.toFixed(1)).toLocaleString();
+function mergesSec(c) {
+  const s = c.stats;
+  const rows = c.merges.map(g => `<tr><td class="sku">${esc(g.sku)}</td><td class="code">${esc(g.batch)}</td><td class="num">${n2(g.bestFit)}</td>
+    <td class="num">${fmt(g.pallets)}</td><td class="num">${n2(g.cases)}</td><td class="num">${fmt(g.need)}</td><td class="num"><b>${fmt(g.frees)}</b></td>
+    <td>${g.oneBin ? 'Same bin' : `${fmt(g.bins)} bins`}</td></tr>`).join('');
+  return rows ? `<div class="panel-sec"><h3>Merge candidates<small>${c.merges.length < s.mergeGroups ? `top ${c.merges.length} of ${fmt(s.mergeGroups)}` : `${fmt(s.mergeGroups)} SKU-batch${s.mergeGroups === 1 ? '' : 'es'}`}</small></h3><div class="table-wrap"><table><thead><tr><th>SKU</th><th>Batch</th><th class="num">Best fit</th><th class="num">Partial pallets</th><th class="num">Cases</th><th class="num">Needs</th><th class="num">Frees</th><th>Where</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : '';
+}
+function shelfSec(c) {
+  if (!c.shelf.groups) return '';
+  const li = c.shelf.top.slice(0, 15).map(x => `<li><span class="code">${esc(x.sku)}</span> <span class="code">${esc(x.batch)}</span>: ${fmt(x.bins)} bins <small class="code">${esc(x.list.slice(0, 6).join(', '))}${x.list.length > 6 ? ', …' : ''}</small></li>`).join('');
+  return `<div class="panel-sec"><h3>Shelf bins<small>${fmt(c.shelf.groups)} SKU-batches sit in more than one shelf bin (${fmt(c.shelf.extraBins)} extra bins)</small></h3>
+      <p class="hint" style="margin:0 0 8px">Shelves have no best fit, because putaway sizes them by volume. Check these by eye before merging.</p><ul class="skips">${li}</ul></div>`;
+}
+function consolidationHtml(c) {
+  if (!c) return '';
+  const s = c.stats, pctOf = (a, b) => b ? Math.round(a / b * 100) + '%' : '–';
+  const zones = c.zones.filter(z => z.positions).map(z => `<tr><td class="key">${esc(z.zone)}</td><td>${esc(z.area)}</td>
+    <td class="num">${fmt(z.positions)}</td><td class="num">${fmt(z.used)}</td><td class="num">${fmt(z.spare)}</td>
+    <td class="num">${fmt(z.partial)}</td><td class="num">${z.frees ? `<b>${fmt(z.frees)}</b>` : '0'}</td></tr>`).join('');
+  return `<div class="panel">
+    <div class="panel-sec"><h3>Consolidation<small>pallet bins after this sheet${c.isReset ? ' (RESET replaces the stock in its bins)' : ', counting stock already there'}</small></h3>
+      <dl class="stats">
+        <div><dt>Free after sheet</dt><dd>${fmt(s.spare)}</dd></div>
+        <div><dt>Freed by merging</dt><dd>${fmt(s.frees)}</dd></div>
+        <div><dt>Free after merging</dt><dd>${fmt(s.spare + s.frees)}</dd></div>
+      </dl>
+      <details style="margin-top:12px"><summary>How that adds up</summary>
+      <dl class="stats" style="margin-top:12px">
+        <div><dt>Pallet positions</dt><dd>${fmt(s.positions)}</dd></div>
+        <div><dt>Partial pallets</dt><dd>${fmt(s.partial)}</dd></div>
+        <div><dt>Bins emptied</dt><dd>${fmt(s.binsEmptied)}</dd></div>
+      </dl>
+      <p class="hint" style="margin:12px 0 0">${fmt(s.palletBins)} active pallet bins (${pctOf(s.used, s.positions)} of positions used, ${fmt(s.emptyBins)} bins empty).
+        ${fmt(s.pallets)} pallets: ${fmt(s.full)} at best fit, ${fmt(s.partial)} partial, ${fmt(s.over)} over best fit, ${fmt(s.mixed)} mixed SKU/batch${s.unsized ? `, ${fmt(s.unsized)} without an L2inL3` : ''}.
+        Merging only joins pallets of the same SKU and batch, so it's allowed whatever the bin type's mixing rules.
+        ${s.frees ? `${fmt(s.mergeGroups)} SKU-batches can merge; ${fmt(s.sameBinFrees)} of the ${fmt(s.frees)} freed pallets are inside the same bin. The Moves tab of the download lists every pour.` : 'No two partial pallets of the same SKU and batch add up to fewer pallets.'}</p></details></div>
+    ${zones ? `<div class="panel-sec"><h3>By zone</h3><div class="table-wrap"><table><thead><tr><th>Zone</th><th>Area</th><th class="num">Positions</th><th class="num">Used</th><th class="num">Free</th><th class="num">Partial pallets</th><th class="num">Freed by merging</th></tr></thead><tbody>${zones}</tbody></table></div></div>` : ''}
+    ${mergesSec(c)}
+    ${shelfSec(c)}
+  </div>`;
+}
+
+// ---- IM cockpit upload files of a consolidation plan --------------------------------
+// one button per file; more than one when a later file needs the earlier tasks done first,
+// or when same-bin pallet transfers (Destination HU on every row) must go in a file of their own
+function imDlHtml(r, plan) {
+  if (!r.im || (r.check && !r.check.ok)) return '';
+  // moves the IM upload would refuse ("Qty exceeds bin capacity"): left out, listed in the plan workbook
+  const held = r.imHeld ? `<div class="callout warn" style="margin-top:10px">${plural(r.imHeld, 'planned move')} left out of the IM upload: the WMS would refuse them with "Qty exceeds bin capacity" because a bin would go over 100% of what it counts the bin can hold. Download the plan and see <b>Not in IM upload</b> for each one and why.</div>` : '';
+  if (!r.im.length) return held;
+  const many = r.im.length > 1;
+  const btns = r.im.map(f => `<button type="button" class="btn" data-im-plan="${plan}" data-im-token="${esc(r.token)}" data-im-file="${f.n}">${many ? `IM upload ${f.n} of ${r.im.length}` : 'Download IM upload'}</button>`).join('');
+  const what = r.im.map(f => `${many ? `<b>${f.n}</b>: ` : ''}${esc(f.what)}, ${plural(f.rows, 'row')}${f.whole ? ` (${fmt(f.whole)} Pick HU true)` : ''}${f.wave > 1 ? `, after the wave ${f.wave - 1} tasks are done` : ''}`).join('<br>');
+  return `<div class="download" style="margin-top:10px">${btns}
+    <p>Ready for IM cockpit &gt; Internal Movement Upload: Sheet1, Pick HU as true/false (whole pallet = true), every bin within the WMS capacity check.${many ? ' Upload them in order.' : ''}<br>${what}</p></div>${held}`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-im-plan]');
+  if (!b) return;
+  const a = document.createElement('a');
+  a.href = '/api/inv/im-download?' + qs({plan: b.dataset.imPlan, token: b.dataset.imToken, file: b.dataset.imFile});
+  document.body.append(a); a.click(); a.remove();
+});
+
+// ---- consolidate stock ------------------------------------------------------------
+$('#cs-go').onclick = async () => {
+  const out = $('#cs-out');
+  if (!/^\d+$/.test(wh())) { out.innerHTML = '<div class="alert" role="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; return; }
+  const go = $('#cs-go'); go.disabled = true; go.textContent = 'Reading stock…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading bins, pallets, stock and task locks…</div>';
+  try {
+    const r = await api('/api/inv/consolidate?' + qs());
+    out.innerHTML = stockPlanHtml(r);
+    go.classList.remove('primary'); go.dataset.label = 'Read the stock again';
+    $('#cs-dl') && ($('#cs-dl').onclick = () => { const a = document.createElement('a'); a.href = '/api/inv/consolidate-download?' + qs({token: r.token}); document.body.append(a); a.click(); a.remove(); });
+  } catch (e) { out.innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`; }
+  go.disabled = false; go.textContent = go.dataset.label || 'Find what can be freed';
+};
+function stockPlanHtml(r) {
+  const s = r.stats, p = r.pack.stats, binsFreed = s.binsEmptied + p.bins, any = s.frees || binsFreed;
+  const pctOf = (a, b) => b ? Math.round(a / b * 100) + '%' : '–';
+  const head = !s.palletBins ? 'No pallet bins in storage areas'
+    : any ? [s.frees ? plural(s.frees, 'pallet position') : '', binsFreed ? plural(binsFreed, 'bin') : ''].filter(Boolean).join(' and ') + ' can be freed'
+    : 'Nothing to consolidate';
+  const zones = r.zones.filter(z => z.positions).map(z => `<tr><td class="key">${esc(z.zone)}</td><td>${esc(z.area)}</td>
+    <td class="num">${fmt(z.positions)}</td><td class="num">${fmt(z.used)}</td><td class="num">${fmt(z.spare)}</td>
+    <td class="num">${fmt(z.partial)}</td><td class="num">${z.frees ? `<b>${fmt(z.frees)}</b>` : '0'}</td><td class="num">${z.binsFreed ? `<b>${fmt(z.binsFreed)}</b>` : '0'}</td></tr>`).join('');
+  const packRows = r.pack.bins.map(b => `<tr><td class="bin">${esc(b.bin)}</td><td class="key">${esc(b.zone)}</td><td>${esc(b.binType)}</td>
+    <td class="num">${fmt(b.pallets)} of ${fmt(b.cap)}</td><td>${b.to.map(t => `<span class="mono">${esc(t)}</span>`).join(', ')}</td></tr>`).join('');
+  return `<div class="panel" style="margin-top:16px">
+    <div class="panel-sec"><div class="verdict-big"><span class="light ${any ? 'green' : 'yellow'}"></span><h3>${head}</h3>
+      <span class="hint">${fmt(s.pallets)} pallets in ${fmt(s.palletBins)} pallet bins, read ${esc(new Date(r.loadedAt).toLocaleTimeString())}</span></div>
+      <dl class="stats" style="margin-top:18px">
+        <div><dt>Positions free now</dt><dd>${fmt(s.spare)}</dd></div>
+        <div><dt>Freed by merging</dt><dd>${fmt(s.frees)}</dd></div>
+        <div><dt>Free after merging</dt><dd>${fmt(s.spare + s.frees)}</dd></div>
+        <div><dt>Bins freed</dt><dd>${fmt(binsFreed)}</dd></div>
+      </dl>
+      <p class="hint" style="margin:12px 0 0">${pctOf(s.used, s.positions)} of ${fmt(s.positions)} positions used, ${fmt(s.emptyBins)} pallet bins empty.
+        ${fmt(s.full)} pallets at best fit, ${fmt(s.partial)} partial, ${fmt(s.over)} over best fit, ${fmt(s.mixed)} mixed SKU/batch${s.unsized ? `, ${fmt(s.unsized)} without an L2inL3 (fill unknown, so never merged)` : ''}${s.locked ? `, ${fmt(s.locked)} locked by a task` : ''}${s.busy ? `, ${fmt(s.busy)} in bins with locked stock or stock arriving (nothing moves in or out of those bins)` : ''}${s.picking ? `, ${fmt(s.picking)} with all their stock being picked` : ''}. Stock being picked isn't counted in a pallet's fill and is never moved.</p>
+      ${r.lockError ? `<div class="callout warn" style="margin-top:12px">${esc(r.lockError)}</div>` : ''}
+      ${any || r.shelf.groups ? `<div class="download" style="margin-top:16px"><button type="button" class="btn primary" id="cs-dl">Download the plan</button>
+        <p>Summary, every pour (Moves), every whole-pallet move (Bin moves), each pallet's fill and plan, shelf bins to look at, and the IM upload sheets.</p></div>` : ''}
+      ${imDlHtml(r, 'pallet')}</div>
+    ${mergesSec(r).replace('<h3>Merge candidates', '<h3>Merge partial pallets').replace('</small></h3>', '</small></h3><p class="hint" style="margin:0 0 10px">Pour the emptiest pallets of a SKU and batch into the fullest, up to best fit. Only the same SKU and batch, so the bin type\'s mixing rules don\'t matter. Each pallet emptied frees a position.</p>')}
+    ${packRows ? `<div class="panel-sec"><h3>Bins to empty by moving whole pallets<small>${plural(p.bins, 'bin')}, ${plural(p.pallets, 'pallet')} to move${r.pack.bins.length < p.bins ? `; first ${r.pack.bins.length}` : ''}</small></h3>
+      <p class="hint" style="margin:0 0 10px">Multi-position bins only, after the merges above. Each pallet goes to a bin of the same zone and bin type that already holds pallets, has room, and allows the SKUs and batches it would then hold. Bins with loose stock or a locked pallet stay as they are.</p>
+      <div class="table-wrap"><table><thead><tr><th>Empty this bin</th><th>Zone</th><th>Bin type</th><th class="num">Pallets</th><th>Move them to</th></tr></thead><tbody>${packRows}</tbody></table></div></div>` : ''}
+    ${zones ? `<div class="panel-sec"><h3>By zone</h3><div class="table-wrap"><table><thead><tr><th>Zone</th><th>Area</th><th class="num">Positions</th><th class="num">Used</th><th class="num">Free</th><th class="num">Partial pallets</th><th class="num">Freed by merging</th><th class="num">Bins freed</th></tr></thead><tbody>${zones}</tbody></table></div></div>` : ''}
+    ${shelfSec(r)}
+  </div>`;
+}
+
+// ---- consolidate eaches (shelf bins) ------------------------------------------------
+function csKind(k) {
+  $('#cs-eaches').hidden = k !== 'eaches'; $('#cs-pallets').hidden = k !== 'pallets'; $('#cs-relocate').hidden = k !== 'relocate';
+  if (k === 'relocate') crLoad();
+}
+document.querySelectorAll('input[name="cs-kind"]').forEach(r => r.addEventListener('change', () => {
+  const k = document.querySelector('input[name="cs-kind"]:checked').value;
+  csKind(k);
+  try { localStorage.setItem('cs-kind', k); } catch {}
+}));
+try { const k = localStorage.getItem('cs-kind'); if (k === 'pallets' || k === 'relocate') { $(k === 'pallets' ? '#csk-p' : '#csk-r').checked = true; setTimeout(() => csKind(k)); } } catch {}
+
+// ---- bins under % full (every inventory area) ----------------------------------------
+const CR = {wh: null, areas: []};
+const crSaved = side => { try { return JSON.parse(localStorage.getItem(`cr-${side}:` + wh()) || 'null'); } catch { return null; } };
+const crCells = side => [...document.querySelectorAll(`#cr-${side} input[data-cell]:checked`)].map(x => x.dataset.cell);
+function crCount(side) {
+  const on = [...document.querySelectorAll(`#cr-${side} input[data-cell]:checked`)];
+  const bins = on.reduce((t, x) => t + Number(x.dataset.bins), 0), occ = on.reduce((t, x) => t + Number(x.dataset.occ), 0);
+  $(`#cr-${side}-count`).textContent = on.length ? `${plural(on.length, 'bin type')} ticked: ${fmt(bins)} bins, ${fmt(occ)} holding stock` : 'Tick at least one bin type';
+}
+function crPicker(side) {
+  const saved = crSaved(side) || [];
+  const typeTxt = t => t.kind === 'PALLET' ? `${t.cap} pallet${t.cap === 1 ? '' : 's'}` : t.volCC >= 1e7 ? 'volume unset' : t.volCC ? `${litres(t.volCC)} L shelf` : 'no volume';
+  $(`#cr-${side}`).innerHTML = CR.areas.length ? CR.areas.map(a => `<fieldset class="ce-area"><legend><label><input type="checkbox" data-area="${esc(a.area)}"> <b>${esc(a.area)}</b></label></legend>
+    ${a.zones.map(z => `<div class="cr-zone"><label class="cr-zl"><input type="checkbox" data-zone="${esc(z.zone)}" data-of="${esc(a.area)}"> <span class="mono">${esc(z.zone)}</span>
+        <small>${fmt(z.occupied)} of ${fmt(z.bins)} hold stock</small></label>
+      <div class="cr-types">${z.types.map(t => { const cell = `${z.zone}|${t.binType}`; return `<label class="cr-type"><input type="checkbox" data-cell="${esc(cell)}" data-z="${esc(z.zone)}" data-a="${esc(a.area)}"
+        data-bins="${t.bins}" data-occ="${t.occupied}" ${saved.includes(cell) ? 'checked' : ''}> <span class="mono">${esc(t.binType)}</span> <small>${typeTxt(t)} · ${fmt(t.occupied)}/${fmt(t.bins)}</small></label>`; }).join('')}</div></div>`).join('')}
+    </fieldset>`).join('') : '<p class="hint">No inventory bins in this warehouse.</p>';
+  crSync(side); crCount(side);
+}
+// zone and area boxes follow the bin types under them
+function crSync(side) {
+  const box = $(`#cr-${side}`);
+  const set = (el, kids) => { el.checked = kids.length && kids.every(k => k.checked); el.indeterminate = !el.checked && kids.some(k => k.checked); };
+  box.querySelectorAll('input[data-zone]').forEach(z => set(z, [...box.querySelectorAll(`input[data-cell][data-z="${CSS.escape(z.dataset.zone)}"]`)]));
+  box.querySelectorAll('input[data-area]').forEach(a => set(a, [...box.querySelectorAll(`input[data-cell][data-a="${CSS.escape(a.dataset.area)}"]`)]));
+}
+['from', 'to'].forEach(side => $(`#cr-${side}`).addEventListener('change', e => {
+  const t = e.target, box = $(`#cr-${side}`);
+  if (t.dataset.area) box.querySelectorAll(`input[data-cell][data-a="${CSS.escape(t.dataset.area)}"]`).forEach(x => { x.checked = t.checked; });
+  if (t.dataset.zone) box.querySelectorAll(`input[data-cell][data-z="${CSS.escape(t.dataset.zone)}"]`).forEach(x => { x.checked = t.checked; });
+  crSync(side); crCount(side);
+  try { localStorage.setItem(`cr-${side}:` + wh(), JSON.stringify(crCells(side))); } catch {}
+}));
+async function crLoad(force) {
+  if (!/^\d+$/.test(wh())) { $('#cr-from-count').textContent = 'Set the warehouse id first'; return; }
+  if (!force && CR.wh === wh()) return;
+  $('#cr-from-count').textContent = 'Loading areas…'; $('#cr-to-count').textContent = '';
+  try {
+    const r = await api('/api/inv/relocate-scope?' + qs(force ? {refresh: '1'} : {}));
+    CR.wh = wh(); CR.areas = r.areas;
+    crPicker('from'); crPicker('to');
+  } catch (e) { $('#cr-from').innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`; $('#cr-from-count').textContent = ''; }
+}
+$('#cr-reload').onclick = () => crLoad(true);
+try { const b = localStorage.getItem('cr-below'); if (b) $('#cr-below').value = b; const e = localStorage.getItem('cr-empty'); if (e) $('#cr-empty').value = e; } catch {}
+$('#cr-empty').addEventListener('change', () => { try { localStorage.setItem('cr-empty', $('#cr-empty').value); } catch {} });
+$('#cr-below').addEventListener('change', () => { try { localStorage.setItem('cr-below', $('#cr-below').value); } catch {} });
+new MutationObserver(() => { if (!$('#v-consolidate').hidden && !$('#cs-relocate').hidden) crLoad(); }).observe($('#v-consolidate'), {attributes: true, attributeFilter: ['hidden']});
+$('#cr-go').onclick = async () => {
+  const out = $('#cr-out');
+  if (!/^\d+$/.test(wh())) { out.innerHTML = '<div class="alert" role="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; return; }
+  await crLoad();
+  const from = crCells('from'), to = crCells('to');
+  if (!from.length || !to.length) { out.innerHTML = '<div class="alert" role="alert">Tick at least one bin type to empty, and at least one to move into.</div>'; return; }
+  const below = Math.min(100, Math.max(0.1, Number($('#cr-below').value) || 100));
+  const go = $('#cr-go'); go.disabled = true; go.textContent = 'Reading stock…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading bins, pallets, stock, pallet sizes and task locks…</div>';
+  try {
+    const r = await api('/api/inv/relocate?' + qs({from: from.join(','), to: to.join(','), belowPct: below,
+      useEmpty: $('#cr-empty').value, checkWeight: $('#cr-kg').checked ? '1' : '0'}));
+    out.innerHTML = crHtml(r);
+    $('#cr-dl') && ($('#cr-dl').onclick = () => { const a = document.createElement('a'); a.href = '/api/inv/relocate-download?' + qs({token: r.token}); document.body.append(a); a.click(); a.remove(); });
+  } catch (e) { out.innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`; }
+  go.disabled = false; go.textContent = 'Find bins to empty';
+};
+function crHtml(r) {
+  const s = r.stats, o = r.opts, p1 = x => x === null || x === undefined ? '–' : (x < 10 ? x.toFixed(2) : x.toFixed(1)) + '%';
+  const unit = (q, u) => `${fmt(q)} ${u === 'L2' ? (q === 1 ? 'case' : 'cases') : u === 'L0' ? (q === 1 ? 'each' : 'eaches') : u === 'L3' ? (q === 1 ? 'pallet' : 'pallets') : u}`;
+  const how = p => p.kind === 'merge' ? `Onto pallet <span class="mono">${esc(p.toHu)}</span>` : p.kind === 'pallet' ? 'Whole pallet' : 'Loose into bin';
+  const after = p => p.kind === 'pour' ? `${litres(p.toUsedAfterCC)} of ${litres(p.toBinVolCC)} L`
+    : `pallet ${p1(p.toPalletAfter * 100)} full<small class="sub">${fmt(p.toPositions)} of ${fmt(p.toCap)} position${p.toCap === 1 ? '' : 's'} used</small>`;
+  const rows = r.moves.map(p => `<tr><td class="num">${p.step}</td><td class="bin">${esc(p.fromBin)}<small class="sub">${esc(p.fromZone)} · ${p1(p.fromOccPct)}</small></td>
+    <td class="code">${esc(p.hu || '–')}</td><td class="sku">${esc(p.sku)}<small class="sub">${esc(p.batch)}</small></td><td class="num"><b>${unit(p.qty, p.uom)}</b></td>
+    <td>${how(p)}</td><td class="bin">${esc(p.toBin)}<small class="sub">${esc(p.toZone)}${p.toWasEmpty ? ' · <span class="pill ok">was empty</span>' : ''}</small></td>
+    <td class="num">${after(p)}</td><td class="num">${p.toKgAfter.toFixed(0)}${p.toMaxKg ? ` / ${fmt(p.toMaxKg)}` : ''}</td></tr>`).join('');
+  const why = Object.entries(r.notEmptiedBy || {}).sort((a, b) => b[1] - a[1]).map(([w, n]) => `${fmt(n)} × ${w.toLowerCase()}`);
+  const notRows = r.notEmptied.map(n => `<tr><td class="bin">${esc(n.bin)}</td><td class="key">${esc(n.zone)}</td><td class="code">${esc(n.binType)}</td><td class="num">${p1(n.occPct)}</td>
+    <td>${esc(n.why)}</td><td class="code">${esc(n.stock)}</td></tr>`).join('');
+  return `<div class="panel" style="margin-top:16px">
+    <div class="panel-sec"><div class="verdict-big"><span class="light ${s.binsEmptied ? 'green' : 'yellow'}"></span>
+      <h3>${s.binsEmptied ? `${plural(s.binsEmptied, 'bin')} can be emptied` : 'No bin can be emptied'}</h3>
+      <span class="hint">${fmt(s.under)} of ${fmt(s.fromStocked)} stocked bins to empty from are under ${o.belowPct}% full · read ${esc(new Date(r.loadedAt).toLocaleTimeString())}</span></div>
+      <dl class="stats" style="margin-top:18px">
+        <div><dt>Under ${o.belowPct}%</dt><dd>${fmt(s.under)}</dd></div>
+        <div><dt>Bins emptied</dt><dd>${fmt(s.binsEmptied)}</dd></div>
+        <div><dt>Steps</dt><dd>${fmt(s.moves)}</dd></div>
+        <div><dt>Pallets moved whole</dt><dd>${fmt(s.palletsMovedWhole)}</dd></div>
+        <div><dt>Pallets merged</dt><dd>${fmt(s.palletsMerged)}</dd></div>
+        <div><dt>Empty bins used</dt><dd>${fmt(s.emptyBinsUsed)}</dd></div>
+        <div><dt>Net bins freed</dt><dd>${fmt(s.netFreed)}</dd></div>
+        ${s.positionsFreed ? `<div><dt>Pallet positions freed</dt><dd>${fmt(s.positionsFreed)}</dd></div>` : ''}
+      </dl>
+      <p class="hint" style="margin:12px 0 0">${fmt(s.toUsable)} bins can receive (${fmt(s.toEmpty)} of the ticked ones are empty; ${{smaller: 'only ones smaller than the bin being emptied are used', any: 'any of them can be used', none: 'none are used'}[o.useEmpty]}).
+        ${why.length ? `Not emptied: ${why.join('; ')}.` : ''} Do the steps in order: a later step can put cases onto a pallet an earlier one moved in.</p>
+      ${r.check.ok ? `<div class="callout" style="margin-top:12px"><span class="pill ok">Re-checked</span> Every step was replayed pallet by pallet and passed positions, pallet fill, weight, mixing rules and scope.</div>`
+        : `<div class="callout warn" style="margin-top:12px"><b>The re-check found problems; don't use this plan.</b> ${r.check.errs.map(esc).join('; ')}</div>`}
+      ${r.fixedError ? `<div class="callout warn" style="margin-top:12px">${esc(r.fixedError)}</div>` : ''}
+      ${s.moves || r.notEmptiedCount ? `<div class="download" style="margin-top:16px"><button type="button" class="btn primary" id="cr-dl">Download the plan</button>
+        <p>Summary, every step in order, bins emptied, every bin under ${o.belowPct}% that wasn't, with the reason, and the IM upload sheets.</p></div>` : ''}
+      ${imDlHtml(r, 'relocate')}</div>
+    ${rows ? `<div class="panel-sec"><h3>Steps<small>${r.moves.length < s.moves ? `first ${fmt(r.moves.length)} of ${fmt(s.moves)}` : plural(s.moves, 'step')}, in order</small></h3>
+      <div class="table-wrap"><table><thead><tr><th class="num">#</th><th>From bin<small class="sub">zone · % full</small></th><th>Pallet</th><th>SKU<small class="sub">batch</small></th><th class="num">Qty</th>
+        <th>How</th><th>To bin</th><th class="num">To after</th><th class="num">kg</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : ''}
+    ${notRows ? `<div class="panel-sec"><details><summary>Under ${o.belowPct}% but not emptied (${fmt(r.notEmptiedCount)})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Bin</th><th>Zone</th><th>Bin type</th>
+      <th class="num">% full</th><th>Why</th><th>Stock</th></tr></thead><tbody>${notRows}</tbody></table></div>${r.notEmptiedCount > r.notEmptied.length ? `<p class="hint">First ${fmt(r.notEmptied.length)}; the download has all of them.</p>` : ''}</details></div>` : ''}
+  </div>`;
+}
+
+const CE = {wh: null, areas: []};
+const litres = cc => cc === null || cc === undefined ? '–' : Number((cc / 1000).toFixed(1)).toLocaleString();
+// remembered ticks per warehouse: {areas: [...], zones: [...]}; first time, every INVENTORY area
+const ceSaved = () => { try { return JSON.parse(localStorage.getItem('ce-scope:' + wh()) || 'null'); } catch { return null; } };
+function ceSave() {
+  const areas = [...document.querySelectorAll('#ce-scope input[data-area]:checked')].map(x => x.dataset.area);
+  const zones = [...document.querySelectorAll('#ce-scope input[data-zone]:checked')].map(x => x.dataset.zone);
+  try { localStorage.setItem('ce-scope:' + wh(), JSON.stringify({areas, zones})); } catch {}
+  ceCount();
+}
+function ceCount() {
+  const z = [...document.querySelectorAll('#ce-scope input[data-zone]:checked')];
+  const bins = z.reduce((t, x) => t + Number(x.dataset.occ), 0);
+  $('#ce-count').textContent = z.length ? `${plural(z.length, 'zone')} ticked, ${fmt(bins)} bins holding stock` : 'Tick at least one zone';
+}
+async function ceLoad(force) {
+  if (!/^\d+$/.test(wh())) { $('#ce-count').textContent = 'Set the warehouse id first'; return; }
+  if (!force && CE.wh === wh()) return;
+  $('#ce-count').textContent = 'Loading areas…';
+  try {
+    const r = await api('/api/inv/eaches-scope?' + qs(force ? {refresh: '1'} : {}));
+    CE.wh = wh(); CE.areas = r.areas; ceTypes(r.binTypes || []);
+    const saved = ceSaved();
+    const on = (a, z) => saved ? saved.zones.includes(z.zone) : a.type === 'INVENTORY';
+    $('#ce-scope').innerHTML = r.areas.length ? r.areas.map(a => `<fieldset class="ce-area"><legend><label><input type="checkbox" data-area="${esc(a.area)}"
+        ${a.zones.every(z => on(a, z)) ? 'checked' : ''}> <b>${esc(a.area)}</b> <small>${esc(a.type)}</small></label></legend>
+      ${a.zones.map(z => `<label class="ce-zone"><input type="checkbox" data-zone="${esc(z.zone)}" data-of="${esc(a.area)}" data-occ="${z.occupied}" ${on(a, z) ? 'checked' : ''}>
+        <span class="mono">${esc(z.zone)}</span> <small>${fmt(z.occupied)} of ${fmt(z.bins)} bins hold stock · ${z.volumes.map(v => v >= 1e7 ? `<span class="pill warn" title="Looks unset; these bins are skipped">${litres(v)} L</span>` : `${litres(v)} L`).join(', ') || 'no volume set'}</small></label>`).join('')}
+      </fieldset>`).join('') : '<p class="hint">No shelf (BIN-type) storage bins in this warehouse.</p>';
+    ceCount();
+  } catch (e) { $('#ce-scope').innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`; $('#ce-count').textContent = ''; }
+}
+$('#ce-scope').addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.area) document.querySelectorAll(`#ce-scope input[data-of="${CSS.escape(t.dataset.area)}"]`).forEach(z => { z.checked = t.checked; });
+  if (t.dataset.of) { const zs = [...document.querySelectorAll(`#ce-scope input[data-of="${CSS.escape(t.dataset.of)}"]`)];
+    const a = document.querySelector(`#ce-scope input[data-area="${CSS.escape(t.dataset.of)}"]`); a.checked = zs.every(z => z.checked); a.indeterminate = !a.checked && zs.some(z => z.checked); }
+  ceSave();
+});
+$('#ce-reload').onclick = () => ceLoad(true);
+const ceTypesSaved = () => { try { return JSON.parse(localStorage.getItem('ce-bt:' + wh()) || 'null'); } catch { return null; } };
+function ceTypes(list) {
+  const saved = ceTypesSaved();
+  $('#ce-types').innerHTML = list.length ? list.map(t => `<label class="ce-type"><input type="checkbox" data-bt="${esc(t.binType)}" data-occ="${t.occupied}" ${!saved || saved.includes(t.binType) ? 'checked' : ''}>
+    <span class="mono">${esc(t.binType)}</span> <small>${t.volCC >= 1e7 ? `<span class="pill warn" title="Looks unset; these bins are skipped">${litres(t.volCC)} L</span>` : t.volCC ? litres(t.volCC) + ' L' : 'no volume'}${t.maxKg ? ` · ${fmt(t.maxKg)} kg` : ''} · ${fmt(t.occupied)} of ${fmt(t.bins)} hold stock · ${t.areas.map(esc).join(', ')}</small></label>`).join('')
+    : '<p class="hint">No shelf bin types.</p>';
+  ceTypesCount();
+}
+function ceTypesCount() {
+  const all = [...document.querySelectorAll('#ce-types input[data-bt]')], on = all.filter(x => x.checked);
+  $('#ce-bt-count').textContent = !all.length ? '' : on.length === all.length ? 'All ticked' : on.length ? `${on.length} of ${all.length} ticked` : 'Tick at least one';
+}
+$('#ce-types').addEventListener('change', () => {
+  try { localStorage.setItem('ce-bt:' + wh(), JSON.stringify([...document.querySelectorAll('#ce-types input[data-bt]:checked')].map(x => x.dataset.bt))); } catch {}
+  ceTypesCount();
+});
+// units and the fill limit are remembered across warehouses
+try { const u = JSON.parse(localStorage.getItem('ce-units') || 'null'); if (u) { $('#ce-u-l0').checked = u.includes('L0'); $('#ce-u-l2').checked = u.includes('L2'); } } catch {}
+try { const b = localStorage.getItem('ce-below'); if (b) $('#ce-below').value = b; } catch {}
+const ceUnits = () => [['L0', '#ce-u-l0'], ['L2', '#ce-u-l2']].filter(([, id]) => $(id).checked).map(([u]) => u);
+[$('#ce-u-l0'), $('#ce-u-l2')].forEach(x => x.addEventListener('change', () => { try { localStorage.setItem('ce-units', JSON.stringify(ceUnits())); } catch {} }));
+$('#ce-below').addEventListener('change', () => { try { localStorage.setItem('ce-below', $('#ce-below').value); } catch {} });
+// load when the Consolidate view opens, and again if the warehouse changes
+new MutationObserver(() => { if (!$('#v-consolidate').hidden) ceLoad(); }).observe($('#v-consolidate'), {attributes: true, attributeFilter: ['hidden']});
+if (!$('#v-consolidate').hidden) ceLoad();
+
+$('#ce-go').onclick = async () => {
+  const out = $('#ce-out');
+  if (!/^\d+$/.test(wh())) { out.innerHTML = '<div class="alert" role="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; return; }
+  await ceLoad();
+  const zones = [...document.querySelectorAll('#ce-scope input[data-zone]:checked')];
+  if (!zones.length) { out.innerHTML = '<div class="alert" role="alert">Tick at least one zone to merge within.</div>'; return; }
+  const areas = [...new Set(zones.map(z => z.dataset.of))];
+  const allTypes = [...document.querySelectorAll('#ce-types input[data-bt]')], types = allTypes.filter(x => x.checked).map(x => x.dataset.bt);
+  if (allTypes.length && !types.length) { out.innerHTML = '<div class="alert" role="alert">Tick at least one bin type.</div>'; return; }
+  const uoms = ceUnits();
+  if (!uoms.length) { out.innerHTML = '<div class="alert" role="alert">Tick eaches, cases or both to move.</div>'; return; }
+  const below = Math.min(100, Math.max(1, Number($('#ce-below').value) || 100));
+  const go = $('#ce-go'); go.disabled = true; go.textContent = 'Reading stock…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading shelf bins, stock, volumes and task locks…</div>';
+  try {
+    const r = await api('/api/inv/consolidate-eaches?' + qs({areas: areas.join(','), zones: zones.map(z => z.dataset.zone).join(','),
+      crossZone: $('#ce-cross').checked ? '1' : '0', checkWeight: $('#ce-kg').checked ? '1' : '0', fillPct: $('#ce-fill').value || 100,
+      binTypes: types.length === allTypes.length ? '' : types.join(','), uoms: uoms.join(','), emptyBelowPct: below}));
+    out.innerHTML = ceHtml(r);
+    $('#ce-dl') && ($('#ce-dl').onclick = () => { const a = document.createElement('a'); a.href = '/api/inv/consolidate-eaches-download?' + qs({token: r.token}); document.body.append(a); a.click(); a.remove(); });
+  } catch (e) { out.innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`; }
+  go.disabled = false; go.textContent = 'Find bins to empty';
+};
+function ceHtml(r) {
+  const s = r.stats, pctOf = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '–';
+  // stocked bins the plan skips (or only empties), counted by reason
+  const left = Object.entries(r.leftOutBy || {}).sort((a, b) => b[1] - a[1]).map(([w, n]) => `${fmt(n)} × ${w.toLowerCase()}`);
+  const leftRows = (r.leftOut || []).map(x => `<tr><td class="bin">${esc(x.bin)}</td><td class="key">${esc(x.zone)}</td><td>${esc(x.reason)}</td><td class="code">${esc(x.stock)}</td></tr>`).join('');
+  const rows = r.moves.map(p => {
+    const fits = p.toUsedAfterCC <= p.toCapCC + 1e-6 && (!p.toMaxKg || p.toKgAfter <= p.toMaxKg + 1e-6);
+    return `<tr><td class="sku">${esc(p.sku)}</td><td class="code">${esc(p.batch)}</td><td class="num"><b>${fmt(p.qty)}</b><small class="sub">${p.uom === 'L0' ? (p.qty === 1 ? 'each' : 'eaches') : p.uom === 'L2' ? (p.qty === 1 ? 'case' : 'cases') : p.uom}</small></td>
+      <td class="bin">${esc(p.fromBin)}<small class="sub">${litres(p.fromUsedCC)} of ${litres(p.fromBinVolCC)} L</small></td>
+      <td class="bin">${esc(p.toBin)}${p.toZone !== p.fromZone ? `<small class="sub">${esc(p.toZone)}</small>` : ''}</td>
+      <td class="num">${Number(p.unitVolCC.toFixed(1)).toLocaleString()}</td><td class="num">${litres(p.moveVolCC)}</td><td class="num">${litres(p.toBinVolCC)}</td>
+      <td class="num">${litres(p.toUsedBeforeCC)} → <b>${litres(p.toUsedAfterCC)}</b><small class="sub">${pctOf(p.toUsedBeforeCC, p.toBinVolCC)} → ${pctOf(p.toUsedAfterCC, p.toBinVolCC)}</small></td>
+      <td class="num">${p.toKgAfter.toFixed(1)}${p.toMaxKg ? ` / ${fmt(p.toMaxKg)}` : ''}</td>
+      <td>${fits ? '<span class="pill ok">Fits</span>' : '<span class="pill bad">Over</span>'}</td></tr>`;
+  }).join('');
+  return `<div class="panel" style="margin-top:16px">
+    <div class="panel-sec"><div class="verdict-big"><span class="light ${s.binsEmptied ? 'green' : 'yellow'}"></span>
+      <h3>${s.binsEmptied ? `${plural(s.binsEmptied, 'shelf bin')} can be emptied` : 'No shelf bin can be emptied'}</h3>
+      <span class="hint">${fmt(s.occupied)} of ${fmt(s.binsInScope)} shelf bins in scope hold stock, read ${esc(new Date(r.loadedAt).toLocaleTimeString())}</span></div>
+      <dl class="stats" style="margin-top:18px">
+        <div><dt>Bins emptied</dt><dd>${fmt(s.binsEmptied)}</dd></div>
+        <div><dt>Most possible</dt><dd>${fmt(s.bestPossible)}${s.optimal ? ' <span class="pill ok" title="No plan can empty more bins under these rules">Best possible</span>' : ''}</dd></div>
+        <div><dt>Moves</dt><dd>${fmt(s.moves)}</dd></div>
+        <div><dt>${r.opts.uoms && r.opts.uoms.some(x => x !== 'L0') ? 'Units moved' : 'Eaches moved'}</dt><dd>${fmt(s.eachesMoved)}</dd></div>
+      </dl>
+      <p class="hint" style="margin:12px 0 0">Most possible: the fewest bins each SKU, batch and price could be squeezed into under these rules, counted in whole units${r.opts.checkWeight ? ' and kg' : ''}. ${s.optimal ? 'This plan reaches it.' : ''}
+        ${r.opts.emptyBelowPct < 100 ? `${plural(s.tooFull || 0, 'bin')} at ${r.opts.emptyBelowPct}% full or more ${s.tooFull === 1 ? 'was' : 'were'} only used to receive.` : ''}
+        ${left.length ? `Bins left out: ${left.join('; ')}.` : 'No stocked bin in scope was left out.'}</p>
+      ${leftRows ? `<details style="margin-top:10px"><summary>Left out bins (${fmt(r.leftOutCount)})</summary><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Bin</th><th>Zone</th><th>Why</th><th>Stock</th></tr></thead><tbody>${leftRows}</tbody></table></div>${r.leftOutCount > r.leftOut.length ? `<p class="hint">First ${fmt(r.leftOut.length)}; the download has all of them.</p>` : ''}</details>` : ''}
+      ${r.check.ok ? `<div class="callout" style="margin-top:12px"><span class="pill ok">Re-checked</span> Every move was replayed on the stock and passed volume, weight and mixing rules.</div>`
+        : `<div class="callout warn" style="margin-top:12px"><b>The re-check found problems; don't use this plan.</b> ${r.check.errs.map(esc).join('; ')}</div>`}
+      ${r.fixedError ? `<div class="callout warn" style="margin-top:12px">${esc(r.fixedError)}</div>` : ''}
+      ${s.moves ? `<div class="download" style="margin-top:16px"><button type="button" class="btn primary" id="ce-dl">Download the plan</button>
+        <p>Summary, every move with bin and unit volumes (Moves), bins emptied, each receiving bin before and after, every bin left out with the reason, and the IM upload sheet.</p></div>` : ''}
+      ${imDlHtml(r, 'eaches')}</div>
+    ${rows ? `<div class="panel-sec"><h3>Moves<small>${r.moves.length < s.moves ? `first ${fmt(r.moves.length)} of ${fmt(s.moves)}` : plural(s.moves, 'move')}, in bin order</small></h3>
+      <div class="table-wrap"><table><thead><tr><th>SKU</th><th>Batch</th><th class="num">Qty</th><th>From bin<small class="sub">used of volume</small></th><th>To bin</th>
+        <th class="num">Unit (cc)<small class="sub">L0 or L2</small></th><th class="num">Move (L)</th><th class="num">To bin (L)</th><th class="num">To bin fill (L)</th><th class="num">kg</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div></div>` : ''}
+  </div>`;
+}
+
+// ---- check masters ---------------------------------------------------------------
+const b64 = buf => { const b = new Uint8Array(buf); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+// which checks run: the server's catalog, minus the ids turned off here (kept per viewer).
+// Storing what's off, not what's on, means a check added later starts switched on.
+const LV_NAME = {fail: 'Red', warn: 'Yellow', info: 'Information'};
+function makePicker(root, storeKey, url) {
+  const P = {kinds: null, off: {}, last: null};
+  try { P.off = JSON.parse(localStorage.getItem(storeKey) || '{}') || {}; } catch {}
+  const groups = root.querySelector('.pick-groups'), count = root.querySelector('.pick-count');
+  const save = () => { try { localStorage.setItem(storeKey, JSON.stringify(P.off)); } catch {} };
+  const presetOff = (k, p) => k.checks.filter(c => p === 'none' || (p === 'fail' && c.level !== 'fail')).map(c => c.id);
+  const setOff = (kind, ids) => { P.off[kind] = [...ids]; save(); render(); };
+  P.offSet = k => new Set(P.off[k] || []);
+  // only ids the server still knows; a check removed later shouldn't count as "off"
+  P.offIds = k => k.checks.filter(c => P.offSet(k.kind).has(c.id)).map(c => c.id);
+  P.skip = () => P.kinds ? Object.fromEntries(P.kinds.map(k => [k.kind, P.offIds(k)])) : undefined;
+  function render() {
+    if (!P.kinds) return;
+    let on = 0, all = 0;
+    const open = new Set([...groups.querySelectorAll('details[open]')].map(d => d.dataset.kind));
+    groups.innerHTML = P.kinds.map(k => {
+      const off = P.offSet(k.kind), n = k.checks.filter(c => !off.has(c.id)).length;
+      on += n; all += k.checks.length;
+      return `<details class="pick-group" data-kind="${k.kind}" ${open.has(k.kind) ? 'open' : ''}>
+      <summary><span>${esc(k.name)}</span><small class="${n < k.checks.length ? 'some' : ''}">${n} of ${k.checks.length} on</small></summary>
+      <div class="pick-tools"><button type="button" class="link" data-kp="all">All</button><button type="button" class="link" data-kp="fail">Red only</button><button type="button" class="link" data-kp="none">None</button></div>
+      <ul class="pick-list">${k.checks.map(c => `<li><label><input type="checkbox" data-id="${esc(c.id)}" ${off.has(c.id) ? '' : 'checked'}>
+        <span class="lv ${c.level}" title="${LV_NAME[c.level]}"></span><b class="pid">${esc(c.id)}</b><span>${esc(c.title)}</span></label></li>`).join('')}</ul></details>`;
+    }).join('');
+    count.textContent = `${on} of ${all} on`;
+    count.classList.toggle('some', on < all);
+    groups.querySelectorAll('.pick-group').forEach(g => {
+      const k = P.kinds.find(x => x.kind === g.dataset.kind);
+      g.querySelectorAll('input[data-id]').forEach(i => i.onchange = () => {
+        const off = P.offSet(k.kind); i.checked ? off.delete(i.dataset.id) : off.add(i.dataset.id); setOff(k.kind, off);
+      });
+      g.querySelectorAll('[data-kp]').forEach(b => b.onclick = () => setOff(k.kind, presetOff(k, b.dataset.kp)));
+    });
+  }
+  root.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+    if (!P.kinds) return;
+    for (const k of P.kinds) P.off[k.kind] = presetOff(k, b.dataset.preset);
+    save(); render();
+  });
+  // "Check again" for whatever was dropped last, with the checks as they are now
+  P.rerun = (names, run) => {
+    const el = root.querySelector('.pick-rerun');
+    el.innerHTML = `<div class="download" style="margin-top:14px"><button type="button" class="btn small">Check again</button>
+      <p>Re-runs ${names.map(esc).join(', ')} with the checks selected above. No need to drop ${names.length === 1 ? 'it' : 'them'} again.</p></div>`;
+    el.querySelector('button').onclick = run;
+  };
+  (async () => {
+    try { P.kinds = (await api(url)).kinds; render(); }
+    catch (e) { count.textContent = ''; groups.innerHTML = `<div class="callout warn">Couldn't load the list of checks, so every check runs. If the server was started before this update, restart it with run.bat. (${esc(e.message)})</div>`; }
+  })();
+  return P;
+}
+const MP = makePicker($('#m-pick'), 'uatdesk.mastersOff', '/api/masters/catalog');
+
+async function checkMasters(files) {
+  const out = $('#masters-out');
+  files = [...files].filter(f => /\.xlsx$/i.test(f.name));
+  if (!files.length) { out.innerHTML = '<div class="alert">Drop .xlsx files.</div>'; return; }
+  if (!/^\d+$/.test(wh())) { out.innerHTML = '<div class="alert">The warehouse id needs to be a number. Fix it under Warehouse id.</div>'; return; }
+  MP.rerun(files.map(f => f.name), () => checkMasters(files));
+  out.innerHTML = `<div class="loading">Checking ${files.map(f => esc(f.name)).join(', ')}…</div>`;
+  try {
+    const body = {whId: wh(), principalId: $('#principal').value.trim() || undefined,
+      skip: MP.skip(),
+      files: await Promise.all(files.map(async f => ({name: f.name, data: b64(await f.arrayBuffer())})))};
+    const r = await api('/api/masters/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    out.innerHTML = `<p class="hint" style="margin:14px 0 0">Checked against encarta principal ${esc(r.principal)}: ${fmt(r.live.skus)} SKUs, ${fmt(r.live.batches)} batches, ${fmt(r.live.production)} production lots.
+      <b class="t-bad">Red</b>: encarta rejects it, or it goes in as wrong data. <b class="t-warn">Yellow</b>: suspicious, worth a look. Row numbers are spreadsheet rows, so row 2 is the first data row.</p>` +
+      r.results.map(v => v.error ? `<div class="alert">${esc(v.name)}: ${esc(v.error)}</div>` : !v.checks.length ? `<div class="panel" style="margin-top:16px">
+        <div class="panel-sec"><h3>${esc(v.kindName)}<small>${esc(v.name)} · ${fmt(v.rows)} rows</small></h3>
+          <div class="callout warn">Every ${esc(v.kindName.toLowerCase())} check is off, so nothing was checked. Turn some on above and press Check again.</div></div></div>` : `<div class="panel" style="margin-top:16px">
+        <div class="panel-sec"><h3>${esc(v.kindName)}<small>${esc(v.name)} · ${fmt(v.rows)} rows · ${fmt(v.rowsHard)} red, ${fmt(v.rowsSoft)} yellow${v.checksOff ? ` · ${fmt(v.checksOff)} check${v.checksOff === 1 ? '' : 's'} off` : ''}</small></h3>
+          <div class="download" style="margin-bottom:14px"><button type="button" class="btn primary" data-dl="${esc(v.token)}">Download checked sheet</button>
+            <p>Your sheet with red and yellow rows and the exact problem on each row in an Issues column.</p></div>
+          ${v.fixes && (v.fixes.rows || v.fixes.review) ? `<div class="download" style="margin-bottom:14px"><button type="button" class="btn" data-fix="${esc(v.token)}">Download fix sheet</button>
+            <p>${fmt(v.fixes.rows)} ready-to-upload AddBatchTemplate row${v.fixes.rows === 1 ? '' : 's'} (missing family batches copied across, case configs corrected)${v.fixes.review ? `, plus ${fmt(v.fixes.review)} date fix${v.fixes.review === 1 ? '' : 'es'} to review first` : ''}${v.fixes.skipped ? `. ${fmt(v.fixes.skipped)} gap${v.fixes.skipped === 1 ? '' : 's'} not fixed because the source batch is itself wrong` : ''}. Re-check the fix sheet here before uploading it.</p></div>` : ''}
+          ${checklistHtml(v)}</div></div>`).join('');
+    doneDrop('#drop-masters', 'Check other sheets: drop them here, or choose files');
+    const get = url => { const a = document.createElement('a'); a.href = url; document.body.append(a); a.click(); a.remove(); };
+    out.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => get('/api/masters/download?token=' + encodeURIComponent(b.dataset.dl)));
+    out.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => get('/api/masters/fixes?token=' + encodeURIComponent(b.dataset.fix)));
+  } catch (e) { out.innerHTML = `<div class="alert">${esc(e.message)}</div>`; }
+}
+{
+  const z = $('#drop-masters');
+  z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
+  z.addEventListener('dragleave', () => z.classList.remove('over'));
+  z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); checkMasters(e.dataTransfer.files); });
+  $('#file-masters').onchange = e => { checkMasters(e.target.files); e.target.value = ''; };
+}
+
+// ---- verify an upload ------------------------------------------------------------
+function renderVerifyLast() {
+  if (TC.verifyRows?.length) {
+    $('#verify-last').innerHTML = `<div class="download" style="margin-top:4px"><button type="button" class="btn primary" id="v-run-case">Verify the test case</button>
+      <p>${esc($('#c-name').value || 'Test case')}: ${plural(TC.verifyRows.length, 'row')}, prefix ${esc($('#c-prefix').value)}.</p></div>`;
+    $('#v-run-case').onclick = () => runVerify(qs({prefix: $('#v-prefix').value.trim()}), JSON.stringify({rows: TC.verifyRows}), {'Content-Type': 'application/json'});
+    return;
+  }
+  $('#verify-last').innerHTML = state.token
+    ? `<div class="download" style="margin-top:4px"><button type="button" class="btn primary" id="v-last">Verify the fill you just built</button>
+       <p>Uses the ${Math.round(state.target * 100)}% fill with prefix ${esc(state.prefix)}.</p></div>`
+    : '<p class="hint" style="margin:4px 0 0">A fill or test case you build in this session shows up here, ready to verify in one click.</p>';
+  $('#v-last') && ($('#v-last').onclick = () => runVerify(qs({token: state.token, prefix: $('#v-prefix').value.trim()})));
+}
+wireDrop('#drop-verify', '#file-verify', async f => { if (await runVerify(qs({prefix: $('#v-prefix').value.trim()}), await f.arrayBuffer())) doneDrop('#drop-verify', 'Verify another sheet: drop it here, or choose a file'); });
+
+async function runVerify(params, body, headers) {
+  const out = $('#verify-out');
+  out.innerHTML = '<div class="loading">Comparing with the stock in those bins…</div>';
+  try {
+    const r = await api('/api/inv/verify?' + params, {method: 'POST', body, headers});
+    const t = r.totals;
+    const all = t.landed === t.lines;
+    const lines = r.lines.map(l => `<tr><td class="bin">${esc(l.bin)}</td><td class="sku">${esc(l.sku)}</td><td class="code">${esc(l.batch)}</td><td>${esc(l.uom)}</td>
+      <td class="num">${fmt(l.expected)}</td><td class="num">${fmt(l.actual)}</td><td><span class="pill ${l.status === 'missing' ? 'bad' : 'warn'}">${l.status === 'missing' ? 'Missing' : 'Different qty'}</span></td></tr>`).join('');
+    out.innerHTML = `<div class="panel" style="margin-top:16px">
+      <div class="panel-sec"><div class="verdict-big"><span class="light ${all ? 'green' : 'red'}"></span>
+        <h3>${all ? 'Everything landed' : t.missing === t.lines ? 'Nothing landed' : `${plural(t.missing + t.different, 'line')} not as expected`}</h3>
+        <span class="hint">${fmt(t.landed)} of ${fmt(t.lines)} stock lines landed</span></div></div>
+      ${lines ? `<div class="panel-sec"><h3>Not as expected</h3><div class="table-wrap"><table><thead><tr><th>Bin</th><th>SKU</th><th>Batch</th><th>UOM</th><th class="num">Expected</th><th class="num">In the bin</th><th>Status</th></tr></thead><tbody>${lines}</tbody></table></div>
+        ${t.missing === t.lines ? '<p class="hint">Nothing landed. The upload probably failed; check the panel for the error.</p>' : ''}${t.different ? '<p class="hint">A bin that already held stock shows the old stock plus what was added, so it appears here as a different quantity.</p>' : ''}</div>` : ''}
+      <div class="panel-sec"><h3>Empty pallets with prefix ${esc(r.prefix || '(none)')}</h3>
+        ${r.emptyHUError ? `<div class="callout warn">Couldn't check: ${esc(r.emptyHUError)}</div>`
+          : r.emptyHUs.length ? `<div class="callout warn"><b>${plural(r.emptyHUs.length, 'empty HU')}</b> with this prefix. A failed upload creates them, and those codes are now burned. Use a new prefix before retrying.</div>
+              <ul class="sample">${r.emptyHUs.slice(0, 30).map(h => `<li>${esc(h)}</li>`).join('')}</ul>
+              <p class="hint" style="margin:8px 0 0"><button type="button" class="link" id="v-copy-hu">Copy ${r.emptyHUs.length > 30 ? 'all ' + fmt(r.emptyHUs.length) : 'list'}</button>${r.emptyHUs.length > 30 ? ` · ${fmt(r.emptyHUs.length - 30)} more not shown` : ''}</p>`
+          : '<p class="none-msg">None. No HU codes were burned.</p>'}</div></div>`;
+    const cp = $('#v-copy-hu');
+    cp && (cp.onclick = async () => { const label = cp.textContent;
+      try { await navigator.clipboard.writeText(r.emptyHUs.join('\n')); cp.textContent = `Copied ${fmt(r.emptyHUs.length)}`; } catch { cp.textContent = 'Copy failed'; }
+      setTimeout(() => { cp.textContent = label; }, 1600); });
+    return true;
+  } catch (e) { out.innerHTML = `<div class="alert">${esc(e.message)}</div>`; }
+}
+
+// ================= test case builder =================
+// Rows are edited here; bins, SKUs and batches come from the live catalog, and the
+// server runs the same checks as the uploader on every change.
+const TC = { cat: null, rows: [], last: null, vtimer: null, preset: null, verifyRows: null };
+const EXEMPT = new Set(['PICK_AND_DROP', 'STAGING', 'REJECT']);
+const dmy = k => k ? k.split('-').reverse().join('/') : '';
+const daysLeft = k => k ? Math.round((Date.parse(k) - Date.parse(TC.cat.today)) / 86400000) : null;
+const caseOp = () => document.querySelector('input[name=c-op]:checked').value;
+const binInfo = code => TC.cat?.binMap.get(code);
+const skuInfo = code => TC.cat?.skuMap.get(code);
+const uomFor = bin => bin?.huType === 'PALLET' ? 'L2' : 'L0';
+const isValidBatch = b => b.active && !b.vendorLot && b.exp > TC.cat.today;
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+async function loadCatalog(refresh) {
+  if (!/^\d+$/.test(wh())) { $('#c-foot').hidden = false; $('#c-foot').innerHTML = '<span class="msg bad">The warehouse id needs to be a number. Fix it under Warehouse id.</span>'; return; }
+  $('#c-foot').innerHTML = '<span class="msg">Loading bins, SKUs and batches for this warehouse…</span>';
+  try { TC.cat = await api('/api/inv/catalog?' + qs(refresh ? {refresh: '1'} : {})); }
+  catch (e) { $('#c-foot').innerHTML = `<span class="msg bad">${esc(e.message)}</span>`; return; }
+  const c = TC.cat;
+  c.binMap = new Map(c.bins.map(a => [a[0], {code: a[0], zone: a[1], area: a[2], areaType: a[3], binType: a[4], huType: a[5], cap: a[6],
+    status: a[7], level: a[8], multiSku: a[9], multiBatch: a[10], id: a[11], zoneId: a[12], areaId: a[13]}]));
+  c.binList = [...c.binMap.values()].sort((a, b) => a.code.localeCompare(b.code));
+  c.skuMap = new Map(c.skus.map(a => [a[0], {code: a[0], clazz: a[1], active: a[2], base: a[3], L0inL2: a[4], L2inL3: a[5], baseCode: a[6] || a[0]}]));
+  c.skuList = [...c.skuMap.values()].sort((a, b) => a.code.localeCompare(b.code));
+  c.batchOf = sku => (c.batches[sku] || []).map(a => ({sku, code: a[0], mfg: a[1], exp: a[2], active: a[3], hasProd: a[4], vendorLot: a[5]}));
+  c.batchBins = new Map(); // sku|batch -> bins already holding it
+  for (const [bin, lines] of Object.entries(c.stock)) for (const [sku, batch] of lines) {
+    const k = `${sku}|${batch}`;
+    if (!c.batchBins.has(k)) c.batchBins.set(k, new Set());
+    c.batchBins.get(k).add(bin);
+  }
+  c.zones = [...new Set(c.binList.map(b => b.zone).filter(Boolean))].sort();
+  const pallets = c.kinds.filter(k => /PALLET/i.test(k));
+  $('#c-kind').innerHTML = (pallets.length ? pallets : ['PALLET']).map(k => `<option ${k === 'PALLET' ? 'selected' : ''}>${esc(k)}</option>`).join('');
+  $('#c-prefix').value = c.suggestedPrefix;
+  restoreDraft();
+  fillBinFilter();
+  if (TC.preset) openPreset(TC.preset);
+  renderGrid();
+  scheduleValidate();
+}
+
+// search table: lowest sequence allowing this class/uom/bucket in the bin, or null
+function allowed(bin, sku, uom, bucket) {
+  if (!bin || !sku?.clazz) return null;
+  if (EXEMPT.has(bin.areaType)) return 0;
+  const s = TC.cat.search[`${String(sku.clazz).toUpperCase()}|${uom}|${String(bucket || 'Good').toUpperCase()}`];
+  if (!s) return null;
+  const seqs = [s.B?.[bin.id], s.Z?.[bin.zoneId], s.A?.[bin.areaId]].filter(x => x !== undefined);
+  return seqs.length ? Math.min(...seqs) : null;
+}
+
+// batch list is sorted by expiry, earliest first
+function pickBatch(sku, mode = 'longest') {
+  const list = TC.cat.batchOf(sku).filter(isValidBatch);
+  if (!list.length) return null;
+  if (mode === 'shortest') return list[0];
+  if (mode === 'near') return list.find(b => daysLeft(b.exp) < Number($('#c-shelf').value || 30)) || list[0];
+  return list[list.length - 1];
+}
+// loose eaches go on the base (un-suffixed) SKU when the case SKU has one
+const looseSku = (s, choice = 'base') => (choice === 'base' && s && !s.base && skuInfo(s.baseCode)) || s;
+// warn when base-SKU eaches would put a second SKU into a single-SKU bin
+function looseHint(bin, sku, where) {
+  const el = $('#pf-loose-h'); if (!el || !sku) return;
+  const choice = pfVal('pf-loosesku'), l = looseSku(sku, choice);
+  const second = l.code !== sku.code && bin?.multiSku === false && Number(pv('pf-loose')) > 0;
+  el.textContent = second ? `${bin.code} takes one SKU only, and ${l.code} would be a second. Choose Same SKU, or a multi-SKU bin.`
+    : `Added as an L0 line of ${l.code} on the same ${where}.`;
+  el.className = 'hintline' + (second ? ' bad' : '');
+}
+function looseBatch(base, caseBatch) {
+  const list = TC.cat.batchOf(base.code);
+  return list.find(b => b.code === caseBatch && isValidBatch(b))?.code ?? pickBatch(base.code)?.code;
+}
+const unitUom = (unit, bin) => unit === 'L0' || unit === 'L2' ? unit : uomFor(bin);
+const caseQty = (sku, uom) => uom === 'L2' ? 1 : (sku?.L0inL2 || 1);
+const palletQty = (sku, uom) => uom === 'L2' ? Math.max(1, Math.floor(sku?.L2inL3 || 1)) : (sku?.L0inL2 || 1) * Math.max(1, Math.floor(sku?.L2inL3 || 1));
+
+const huPad = (p, n) => p + String(n).padStart(huDigits(p, $('#c-len').value), '0');
+function nextHu() {
+  const p = $('#c-prefix').value.trim();
+  let max = 0;
+  for (const r of TC.rows) if (r.hu && r.hu.startsWith(p)) { const n = parseInt(r.hu.slice(p.length), 10); if (n > max) max = n; }
+  return huPad(p, max + 1);
+}
+const caseLenHint = () => huLenHint($('#c-prefix').value, $('#c-len').value, $('#c-len-h'), new Set(TC.rows.map(r => r.hu).filter(Boolean)).size);
+
+function setBatch(r, code) {
+  const b = TC.cat.batchOf(r.sku).find(x => x.code === code);
+  r.batch = code || '';
+  r.mfg = b?.mfg || '';
+  r.exp = b?.exp || '';
+}
+function setBin(r, code) {
+  r.bin = code;
+  const b = binInfo(code);
+  if (!b) return;
+  r.uom = uomFor(b);
+  if (b.huType === 'PALLET') { if (!r.hu) r.hu = nextHu(); r.hukind = r.hukind || $('#c-kind').value; }
+  else { r.hu = ''; r.hukind = ''; }
+}
+function setSku(r, code) {
+  r.sku = code;
+  if (!TC.cat.batchOf(code).some(b => b.code === r.batch)) setBatch(r, pickBatch(code)?.code);
+}
+function addRow(o = {}) {
+  const r = {bin: '', sku: '', qty: o.qty ?? '', uom: o.uom || 'L0', batch: '', mfg: '', exp: '', bucket: o.bucket || 'Good',
+    inclusion: o.inclusion || 'INCLUDED', hu: '', hukind: ''};
+  if (o.bin) setBin(r, o.bin);
+  if (o.uom) r.uom = o.uom;
+  if (o.hu) { r.hu = o.hu; r.hukind = $('#c-kind').value; }
+  TC.rows.push(r);
+  if (o.sku) { r.sku = o.sku; setBatch(r, o.batch !== undefined ? o.batch : pickBatch(o.sku, o.batchMode)?.code); }
+  return r;
+}
+
+// ---- grid ---------------------------------------------------------------------
+const COLS = [['#', ''], ['Bin', 'w-bin'], ['SKU', 'w-sku'], ['Qty', 'w-qty'], ['UOM', 'w-uom'], ['Batch', 'w-batch'],
+  ['HU code and kind', 'w-hu'], ['Bucket and status', 'w-status'], ['', '']];
+
+function binSub(r) {
+  const b = binInfo(r.bin);
+  if (!r.bin) return '';
+  if (!b) return '<span class="sub bad">Not a bin in this warehouse</span>';
+  const stock = TC.cat.stock[r.bin];
+  const kind = b.huType === 'PALLET' ? `pallet bin for ${plural(b.cap, 'pallet')}` : `${String(b.huType || '').toLowerCase()} bin`;
+  return `<span class="sub">${esc(b.zone)}, ${kind}${b.status !== 'ACTIVE' ? `, ${esc(b.status)}` : ''}, ${stock ? `has ${plural(stock.length, 'stock line')}` : 'empty'}</span>`;
+}
+function skuSub(r) {
+  const s = skuInfo(r.sku), b = binInfo(r.bin);
+  if (!r.sku) return '';
+  if (!s) return '<span class="sub bad">Not a SKU for this principal</span>';
+  const facts = [`class ${s.clazz || 'none'}`, s.L0inL2 ? `case ${s.L0inL2}` : '', s.L2inL3 ? `pallet ${Math.floor(s.L2inL3)} cs` : ''].filter(Boolean).join(', ');
+  const no = b && s.clazz && allowed(b, s, r.uom, r.bucket) === null;
+  const eachHint = r.uom === 'L0' && !s.base && s.baseCode !== s.code ? `. Eaches are usually on ${s.baseCode}` : '';
+  return `<span class="sub ${no ? 'bad' : ''}">${esc(facts)}${no ? '. The search table doesn\'t allow it here' : ''}${esc(eachHint)}</span>`;
+}
+// short label for the picker; the detail sits underneath so the cell stays readable
+const batchLabel = b => `${b.code}${!b.active ? ' (inactive)' : b.vendorLot ? ' (vendor lot)' : daysLeft(b.exp) <= 0 ? ' (expired)' : ''}`;
+const batchState = exp => { const d = daysLeft(exp); return d === null ? '' : d <= 0 ? 'bad' : d < Number($('#c-shelf').value || 30) ? 'near' : ''; };
+function batchSub(r) {
+  if (!r.batch) return '';
+  const d = daysLeft(r.exp), st = batchState(r.exp);
+  if (!r.exp) return '<span class="bsub"><span class="tag bad">Not in the batch master</span></span>';
+  return `<span class="bsub"><span>Made</span><b>${esc(dmy(r.mfg))}</b><span>Expires</span><b>${esc(dmy(r.exp))}</b>
+    <span class="tag ${st}">${d <= 0 ? `Expired ${-d} days ago` : `${d} days left`}</span></span>`;
+}
+// one batch option. The closed picker shows the code and a short expiry line; the open list shows
+// days left on the right, made / expires / shelf life left lined up, tags and a shelf-life bar.
+function batchOpt(b, selected, {blockVendor, tags = []} = {}) {
+  const d = daysLeft(b.exp), st = !b.active || b.vendorLot ? 'bad' : batchState(b.exp);
+  const left = d === null ? 'No expiry' : d <= 0 ? `Expired ${fmt(-d)}d ago` : `${fmt(d)} days left`;
+  const span = b.mfg && b.exp ? Date.parse(b.exp) - Date.parse(b.mfg) : 0;
+  const life = span > 0 && d !== null ? Math.max(0, Math.min(100, Math.round(d * 86400000 / span * 100))) : null;
+  const sub = `exp ${dmy(b.exp)}, ${left.toLowerCase()}${b.vendorLot ? ', also a vendor lot' : ''}`;
+  const cols = [`Made=${b.mfg ? dmy(b.mfg) : 'unknown'}`, `Expires=${b.exp ? dmy(b.exp) : 'unknown'}`, life !== null ? `Life left=${life}%` : ''].filter(Boolean).join('|');
+  const bins = TC.cat.batchBins.get(`${b.sku}|${b.code}`)?.size || 0;
+  const allTags = [...tags, !b.active && 'Inactive', b.vendorLot && 'Vendor lot', bins && `In ${plural(bins, 'bin')}`].filter(Boolean);
+  return `<option value="${esc(b.code)}" data-sub="${esc(sub)}" data-tone="${st}" data-right="${esc(left)}" data-cols="${esc(cols)}"
+    data-tags="${esc(allTags.join('|'))}" ${life !== null ? `data-life="${life}"` : ''} ${blockVendor && b.vendorLot ? 'disabled' : ''} data-main="${esc(b.code)}" ${selected ? 'selected' : ''}>${esc(batchLabel(b))}</option>`;
+}
+// batches grouped the way a tester picks them, earliest expiry first inside each group
+function batchGroups(sku, val, opts = {}) {
+  const list = TC.cat.batchOf(sku), near = Number($('#c-shelf').value || 30);
+  const valid = list.filter(isValidBatch), first = valid[0]?.code, last = valid.length > 1 ? valid[valid.length - 1].code : null;
+  const groups = [['Good to use', []], [`Expiring within ${near} days`, []], ['Expired', []], ['Inactive or vendor lot', []]];
+  for (const b of list) {
+    const d = daysLeft(b.exp);
+    groups[!b.active || b.vendorLot ? 3 : d === null || d <= 0 ? 2 : d < near ? 1 : 0][1].push(b);
+  }
+  const tagsOf = b => [b.code === first && 'FEFO next', b.code === last && 'Longest life'];
+  return groups.filter(([, bs]) => bs.length).map(([label, bs]) => `<optgroup label="${esc(label)}">${bs.map(b => batchOpt(b, b.code === val, {...opts, tags: tagsOf(b)})).join('')}</optgroup>`).join('');
+}
+function batchOptions(r) {
+  const list = TC.cat.batchOf(r.sku);
+  const orphan = r.batch && !list.some(b => b.code === r.batch) ? `<option value="${esc(r.batch)}" data-sub="not in the batch master" data-tone="bad" data-right="Not in master" selected>${esc(r.batch)}</option>` : '';
+  return `<option value="">${list.length ? 'Pick a batch' : r.sku ? 'No batches' : 'Pick a SKU first'}</option>${batchGroups(r.sku, r.batch)}${orphan}`;
+}
+const OPT_SUB = {L0: 'eaches', L2: 'cases', L3: 'pallets', Good: 'sellable stock', Damaged: 'damaged bucket',
+  INCLUDED: 'counted in stock', 'PRE-GRN': 'received, not yet GRN-ed', 'POST-GIN': 'issued, not yet shipped'};
+const sel = (f, val, opts) => `<select data-f="${f}">${opts.map(o => `<option ${o === val ? 'selected' : ''} data-sub="${esc(OPT_SUB[o] || '')}">${esc(o)}</option>`).join('')}</select>`;
+
+function rowHtml(r, i) {
+  const kinds = [...new Set([...TC.cat.kinds, r.hukind].filter(Boolean))];
+  const noHu = binInfo(r.bin)?.huType === 'BIN' && !r.hu;
+  return `<tr data-i="${i}">
+    <td class="rn">${i + 2}</td>
+    <td><input data-f="bin" class="${binInfo(r.bin) ? 'is-bin' : ''}" list="dl-bins" value="${esc(r.bin)}" spellcheck="false" aria-label="Bin, row ${i + 2}">${binSub(r)}</td>
+    <td><input data-f="sku" list="dl-skus" value="${esc(r.sku)}" spellcheck="false" aria-label="SKU, row ${i + 2}">${skuSub(r)}</td>
+    <td><input data-f="qty" type="number" min="1" step="1" value="${esc(r.qty)}" aria-label="Quantity, row ${i + 2}"></td>
+    <td>${sel('uom', r.uom, ['L0', 'L2', 'L3'])}</td>
+    <td><select data-f="batch" data-cb-width="430" aria-label="Batch, row ${i + 2}">${batchOptions(r)}</select>${batchSub(r)}</td>
+    <td><div class="stack"><input data-f="hu" value="${esc(r.hu)}" spellcheck="false" ${noHu ? 'disabled placeholder="Shelf bin, no HU"' : ''} aria-label="HU code, row ${i + 2}">
+      <select data-f="hukind" ${noHu ? 'disabled' : ''} aria-label="HU kind, row ${i + 2}"><option value=""></option>${kinds.map(k => `<option ${k === r.hukind ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select></div></td>
+    <td><div class="stack">${sel('bucket', r.bucket, ['Good', 'Damaged'])}${sel('inclusion', r.inclusion, ['INCLUDED', 'PRE-GRN', 'POST-GIN'])}</div></td>
+    <td><button type="button" class="del" title="Remove row ${i + 2}" aria-label="Remove row ${i + 2}">×</button></td></tr>`;
+}
+
+function renderGrid() {
+  const g = $('#c-grid');
+  $('#c-count').textContent = TC.rows.length ? `${TC.rows.length}` : '';
+  if (!TC.cat) return;
+  caseLenHint();
+  if (!TC.rows.length) {
+    g.innerHTML = '<tbody><tr><td class="grid-empty" colspan="9">No rows yet. Start from a preset above, add a blank row, or load an existing sheet to edit it. Each row is checked against live master data as you go.</td></tr></tbody>';
+    return;
+  }
+  // keep the caret where it was when checks re-render the grid
+  const a = document.activeElement, focus = a?.closest?.('#c-grid tr') ? {i: a.closest('tr').dataset.i, f: a.dataset.f || a.dataset.cbFor} : null;
+  g.innerHTML = `<thead><tr>${COLS.map(([h, c]) => `<th class="${c}">${h}</th>`).join('')}</tr></thead><tbody>${TC.rows.map(rowHtml).join('')}</tbody>`;
+  applyIssues();
+  if (focus) g.querySelector(`tr[data-i="${focus.i}"] [data-f="${focus.f}"]`)?.focus();
+}
+
+function applyIssues() {
+  const iss = TC.last?.rowIssues || {};
+  document.querySelectorAll('#c-grid tr[data-i]').forEach(tr => {
+    // a row nobody has started yet isn't painted red; the dock bar still lists what it needs
+    const r = TC.rows[Number(tr.dataset.i)];
+    const list = r && !r.bin && !r.sku && !r.batch && (r.qty === '' || r.qty == null) ? [] : iss[Number(tr.dataset.i) + 2] || [];
+    tr.querySelectorAll('[data-f]').forEach(el => {
+      const fields = el.dataset.f === 'batch' ? ['batch', 'mfg', 'exp'] : [el.dataset.f];
+      const mine = list.filter(t => fields.includes(t.field));
+      el.classList.toggle('c-bad', mine.some(t => t.level === 'fail'));
+      el.classList.toggle('c-warn', mine.length > 0 && !mine.some(t => t.level === 'fail'));
+      el.title = mine.map(t => t.title).join('\n');
+    });
+  });
+}
+
+function fillList(dl, list, value, label) {
+  const v = String(value || '').trim().toUpperCase(), hits = [];
+  const text = x => x.zone !== undefined ? `${x.code} ${x.zone || ''} ${x.area || ''}`.toUpperCase() : x.code.toUpperCase();
+  for (const x of list) { if (!v || text(x).includes(v)) { hits.push(x); if (hits.length >= 80) break; } }
+  $(dl).innerHTML = hits.map(x => `<option value="${esc(x.code)}">${esc(label(x))}</option>`).join('');
+}
+// area / zone / empty filter from the Bin search bar
+function filteredBins() {
+  const a = $('#bf-area').value, z = $('#bf-zone').value, empty = $('#bf-empty').checked;
+  return TC.cat.binList.filter(b => (!a || b.area === a) && (!z || b.zone === z) && (!empty || !TC.cat.stock[b.code]));
+}
+function fillBinFilter() {
+  const c = TC.cat, a = $('#bf-area').value;
+  const areas = [...new Map(c.binList.filter(b => b.area).map(b => [b.area, b.areaType])).entries()].sort((x, y) => x[0].localeCompare(y[0]));
+  $('#bf-area').innerHTML = '<option value="">All areas</option>' + areas.map(([code, type]) => `<option value="${esc(code)}" ${code === a ? 'selected' : ''}>${esc(code)} (${esc(String(type || '').toLowerCase())})</option>`).join('');
+  const z = $('#bf-zone').value;
+  const zones = [...new Set(c.binList.filter(b => b.zone && (!$('#bf-area').value || b.area === $('#bf-area').value)).map(b => b.zone))].sort();
+  $('#bf-zone').innerHTML = '<option value="">All zones</option>' + zones.map(code => `<option ${code === z ? 'selected' : ''}>${esc(code)}</option>`).join('');
+  const n = filteredBins().length;
+  $('#bf-count').textContent = `${n.toLocaleString()} bin${n === 1 ? '' : 's'} match`;
+}
+$('#bf-area').addEventListener('change', () => { $('#bf-zone').value = ''; fillBinFilter(); if (TC.preset) refreshPreset(TC.preset); });
+$('#bf-zone').addEventListener('change', () => { fillBinFilter(); if (TC.preset) refreshPreset(TC.preset); });
+$('#bf-empty').addEventListener('change', fillBinFilter);
+const binLabel = b => `${b.zone || ''}, ${b.huType || ''}${TC.cat.stock[b.code] ? ', has stock' : ', empty'}`;
+const skuLabel = s => `class ${s.clazz || 'none'}${s.active ? '' : ', inactive'}`;
+function listFor(el) {
+  const k = el.dataset.f || el.dataset.pick;
+  if (k === 'bin' || k === 'bin-any') fillList('#dl-bins', filteredBins(), el.value, binLabel);
+  else if (k === 'bin-pallet') fillList('#dl-bins', filteredBins().filter(b => b.huType === 'PALLET'), el.value, binLabel);
+  else if (k === 'sku') fillList('#dl-skus', TC.cat.skuList.filter(s => s.active), el.value, skuLabel);
+}
+
+$('#c-grid').addEventListener('focusin', e => { if (e.target.matches('[data-f=bin],[data-f=sku]')) listFor(e.target); });
+$('#c-grid').addEventListener('input', e => { if (e.target.matches('[data-f=bin],[data-f=sku]')) listFor(e.target); });
+$('#c-grid').addEventListener('change', e => {
+  const tr = e.target.closest('tr[data-i]'); if (!tr) return;
+  const r = TC.rows[Number(tr.dataset.i)], f = e.target.dataset.f, v = e.target.value.trim();
+  if (f === 'bin') setBin(r, v);
+  else if (f === 'sku') setSku(r, v);
+  else if (f === 'batch') setBatch(r, v);
+  else if (f === 'qty') r.qty = v === '' ? '' : Number(v);
+  else r[f] = v;
+  renderGrid();
+  scheduleValidate();
+});
+$('#c-grid').addEventListener('click', e => {
+  if (!e.target.matches('.del')) return;
+  TC.rows.splice(Number(e.target.closest('tr').dataset.i), 1);
+  renderGrid(); scheduleValidate();
+});
+
+// ---- case bar --------------------------------------------------------------------
+$('#c-add').onclick = () => { addRow(); renderGrid(); scheduleValidate(); $('#c-grid tr:last-child [data-f=bin]')?.focus(); };
+$('#c-clear').onclick = () => { if (TC.rows.length && confirm(`Remove all ${TC.rows.length} rows?`)) { TC.rows = []; renderGrid(); scheduleValidate(); } };
+// renumber pallet HUs, e.g. after a failed upload burned the old codes or the code length changed;
+// rows that shared a pallet (loose eaches on top) keep sharing it
+function renumberHus() {
+  const p = $('#c-prefix').value.trim(), map = new Map(); let n = 0;
+  TC.rows.forEach(r => { if (!r.hu) return; if (!map.has(r.hu)) map.set(r.hu, huPad(p, ++n)); r.hu = map.get(r.hu); });
+  renderGrid(); scheduleValidate();
+}
+$('#c-prefix').addEventListener('change', renumberHus);
+$('#c-len').addEventListener('change', renumberHus);
+$('#c-prefix').addEventListener('input', caseLenHint);
+$('#c-len').addEventListener('input', caseLenHint);
+$('#c-kind').addEventListener('change', () => { TC.rows.forEach(r => { if (r.hu) r.hukind = $('#c-kind').value; }); renderGrid(); scheduleValidate(); });
+document.querySelectorAll('input[name=c-op]').forEach(el => el.addEventListener('change', scheduleValidate));
+$('#c-shelf').addEventListener('change', () => { renderGrid(); scheduleValidate(); });
+$('#c-name').addEventListener('change', saveDraft);
+$('#c-import').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const r = await api('/api/inv/parse?' + qs(), {method: 'POST', body: await f.arrayBuffer()});
+    if (TC.rows.length && !confirm(`Replace the ${TC.rows.length} rows in the grid with ${r.rows.length} rows from ${f.name}?`)) return;
+    TC.rows = r.rows.map(x => ({bin: x.bin, sku: x.sku, qty: x.qty, uom: x.uom || 'L0', batch: x.batch || '', mfg: x.mfg || '', exp: x.exp || '',
+      bucket: x.bucket || 'Good', inclusion: x.inclusion || 'INCLUDED', hu: x.hu || '', hukind: x.hukind || ''}));
+    const op = r.rows[0]?.op; if (op) document.getElementById(op === 'RESET' ? 'cop-r' : 'cop-a').checked = true;
+    if (!$('#c-name').value) $('#c-name').value = f.name.replace(/\.xlsx$/i, '');
+    renderGrid(); scheduleValidate();
+  } catch (err) { alert(err.message); }
+};
+
+// ---- checks, footer, export --------------------------------------------------------
+const payloadRows = () => TC.rows.map(r => ({...r, op: caseOp()}));
+function scheduleValidate() { clearTimeout(TC.vtimer); TC.vtimer = setTimeout(validateRows, 400); saveDraft(); renderFoot(true); }
+async function validateRows() {
+  if (!TC.cat) return;
+  if (!TC.rows.length) { TC.last = null; renderFoot(); return; }
+  try {
+    TC.last = await api('/api/inv/validate-rows?' + qs(), {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rows: payloadRows(), shelfLifeDays: Number($('#c-shelf').value) || 0})});
+  } catch (e) { TC.last = {error: e.message}; }
+  applyIssues(); renderFoot();
+}
+
+function renderFoot(pending) {
+  const f = $('#c-foot'), v = TC.last, n = TC.rows.length;
+  if (!TC.cat) return;
+  f.hidden = !n;
+  if (!n) return;
+  if (pending || !v) { const b = $('#c-dl'); if (b) b.disabled = true; return; }
+  if (v.error) { f.innerHTML = `<span class="msg bad">${esc(v.error)}</span>`; return; }
+  const bad = v.checks.filter(c => c.status === 'fail'), warn = v.checks.filter(c => c.status === 'warn');
+  // rows nobody has started yet fail every rule; listing them all buries the real problems
+  const unstarted = x => { const r = TC.rows[x - 2]; return !!r && !r.bin && !r.sku && !r.batch && (r.qty === '' || r.qty == null); };
+  const fresh = TC.rows.filter((r, i) => unstarted(i + 2)).length;
+  const shown = [...bad, ...warn].map(c => ({...c, more: c.count > c.rows.length, after: Math.max(0, ...c.rows), rows: c.rows.filter(x => !unstarted(x))})).filter(c => c.rows.length || c.more);
+  const item = c => !c.rows.length ? `<li>${esc(c.title)}: rows after ${c.after}</li>`
+    : `<li>${esc(c.title)}: row${c.rows.length > 1 ? 's' : ''} ${c.rows.map(x => `<button type="button" class="link" data-row="${x}">${x}</button>`).join(', ')}${c.more ? ', …' : ''}</li>`;
+  const list = !shown.length ? '' : shown.length <= 3 ? `<ul>${shown.map(item).join('')}</ul>`
+    : `<details><summary>Show the list (${shown.length})</summary><ul>${shown.map(item).join('')}</ul></details>`;
+  // the pills count what's listed; blank rows get their own line
+  const badShown = shown.filter(c => c.status === 'fail').length, warnShown = shown.length - badShown;
+  f.innerHTML = `<div class="msg">
+      ${badShown ? `<span class="pill bad">${plural(badShown, 'problem')} to fix</span>` : bad.length ? (fresh ? '' : `<span class="pill bad">${plural(bad.length, 'problem')} to fix</span>`) : '<span class="pill ok">Ready to download</span>'}
+      ${warnShown ? `<span class="pill warn">${plural(warnShown, 'warning')}</span>` : ''}
+      ${fresh ? `<span class="pill muted">Fill or remove ${plural(fresh, 'blank row')}</span>` : ''}
+      ${n === fresh ? '' : `<span class="hint foot-stats" style="margin-left:6px">${plural(n, 'row')}, ${plural(new Set(TC.rows.map(r => r.bin).filter(Boolean)).size, 'bin')}, ${plural(TC.rows.filter(r => r.hu).length, 'new HU')}</span>`}
+      ${list}
+      ${v.sessions?.length ? `<ul><li>${plural(v.sessions.length, 'open session')} will block the upload. Tick Force update in the panel.</li></ul>` : ''}
+    </div>
+    <button type="button" class="btn" id="c-verify">Verify after upload</button>
+    <button type="button" class="btn primary big" id="c-dl" ${bad.length ? 'disabled' : ''}>Download sheet</button>`;
+  f.querySelectorAll('[data-row]').forEach(a => a.onclick = () => flashRow(Number(a.dataset.row)));
+  $('#c-dl').onclick = exportCase;
+  $('#c-verify').onclick = () => { TC.verifyRows = payloadRows(); $('#v-prefix').value = $('#c-prefix').value.trim(); showMode('verify'); };
+}
+function flashRow(n) {
+  const tr = document.querySelector(`#c-grid tr[data-i="${n - 2}"]`); if (!tr) return;
+  tr.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  tr.classList.add('flash'); setTimeout(() => tr.classList.remove('flash'), 1400);
+  tr.querySelector('.c-bad, .c-warn')?.focus();
+}
+
+async function exportCase() {
+  const btn = $('#c-dl'); btn.disabled = true; btn.textContent = 'Preparing…';
+  try {
+    const r = await fetch('/api/inv/export?' + qs(), {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rows: payloadRows(), name: $('#c-name').value.trim() || 'test-case', shelfLifeDays: Number($('#c-shelf').value) || 0})});
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `HTTP ${r.status}`); }
+    const blob = await r.blob();
+    const name = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'test-case.xlsx';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    TC.verifyRows = payloadRows(); $('#v-prefix').value = $('#c-prefix').value.trim();
+  } catch (e) { alert(e.message); }
+  btn.disabled = false; btn.textContent = 'Download sheet';
+}
+
+function saveDraft() {
+  if (!TC.cat) return;
+  try { localStorage.setItem('tc:' + wh(), JSON.stringify({name: $('#c-name').value, prefix: $('#c-prefix').value, len: $('#c-len').value, op: caseOp(), shelf: $('#c-shelf').value, rows: TC.rows})); } catch {}
+}
+function restoreDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem('tc:' + wh()) || 'null'); } catch {}
+  TC.rows = d?.rows || [];
+  $('#c-name').value = d?.name || '';
+  if (d?.prefix) $('#c-prefix').value = d.prefix;
+  $('#c-len').value = d?.len || $('#c-prefix').value.trim().length + 5;
+  if (d?.shelf) $('#c-shelf').value = d.shelf;
+  document.getElementById(d?.op === 'RESET' ? 'cop-r' : 'cop-a').checked = true;
+}
+
+// ---- presets ------------------------------------------------------------------------
+document.querySelectorAll('.preset').forEach(b => b.onclick = () => openPreset(TC.preset === b.dataset.preset ? null : b.dataset.preset));
+
+const pfField = (label, inner, hint = '', cls = '') => `<label class="field ${cls}"><span>${label}</span>${inner}${hint ? `<small class="hintline" ${hint}></small>` : ''}</label>`;
+const pfSeg = (name, opts, val) => `<div class="seg" role="radiogroup">${opts.map(([v, l]) => `<input type="radio" name="${name}" id="${name}-${v}" value="${v}" ${v === val ? 'checked' : ''}><label for="${name}-${v}">${l}</label>`).join('')}</div>`;
+const pfVal = name => document.querySelector(`#preset-form input[name="${name}"]:checked`)?.value;
+const pv = id => document.getElementById(id)?.value.trim() ?? '';
+const selectOpts = (opts, val) => opts.map(([v, l]) => `<option value="${esc(v)}" ${v === val ? 'selected' : ''}>${esc(l)}</option>`).join('');
+
+function openPreset(p) {
+  TC.preset = p;
+  document.querySelectorAll('.preset').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.preset === p)));
+  const box = $('#preset-form');
+  if (!p || !TC.cat) { box.innerHTML = ''; return; }
+  const forms = {single: formSingle, status: formSingle, fefo: formFefo, pallets: formPallets, many: formMany};
+  box.innerHTML = `<div class="panel"><div class="panel-sec">${forms[p](p)}</div></div>`;
+  box.querySelectorAll('[data-pick]').forEach(el => { el.addEventListener('focus', () => listFor(el)); el.addEventListener('input', () => listFor(el)); });
+  box.querySelectorAll('input, select').forEach(el => el.addEventListener('change', () => refreshPreset(p)));
+  box.querySelectorAll('.quick button').forEach(b => b.onclick = () => { $('#pf-qty').value = b.dataset.qty; });
+  $('#pf-add').onclick = () => addFromPreset(p);
+  $('#pf-loose')?.addEventListener('input', () => refreshPreset(p));
+  refreshPreset(p);
+}
+
+function describeBin(code, hintEl) {
+  const b = binInfo(code), el = document.querySelector(hintEl); if (!el) return b;
+  if (!code) { el.textContent = ''; el.className = 'hintline'; return b; }
+  if (!b) { el.textContent = 'Not a bin in this warehouse.'; el.className = 'hintline bad'; return b; }
+  const stock = TC.cat.stock[code];
+  el.textContent = `${b.zone}, ${b.huType === 'PALLET' ? `pallet bin for ${plural(b.cap, 'pallet')}` : String(b.huType || '').toLowerCase() + ' bin'}, ${stock ? `has ${plural(stock.length, 'stock line')}` : 'empty'}${b.status !== 'ACTIVE' ? `, ${b.status}` : ''}.`;
+  el.className = 'hintline' + (b.status !== 'ACTIVE' ? ' bad' : '');
+  return b;
+}
+function describeSku(code, bin, uom, bucket, hintEl) {
+  const s = skuInfo(code), el = document.querySelector(hintEl); if (!el) return s;
+  if (!code) { el.textContent = ''; el.className = 'hintline'; return s; }
+  if (!s) { el.textContent = 'Not a SKU for this principal.'; el.className = 'hintline bad'; return s; }
+  const seq = bin ? allowed(bin, s, uom, bucket) : undefined;
+  el.textContent = `Class ${s.clazz || 'none'}${s.L0inL2 ? `, case of ${s.L0inL2}` : ''}${s.L2inL3 ? `, ${Math.floor(s.L2inL3)} cases a pallet` : ''}.`
+    + (seq === undefined ? '' : seq === null ? ` The search table doesn't allow ${uom} ${bucket} stock of this class here.` : ` Allowed here (search sequence ${seq}).`)
+    + (uom === 'L0' && !s.base && s.baseCode !== s.code ? ` For eaches, the base SKU is ${s.baseCode}.` : '');
+  el.className = 'hintline' + (seq === null || !s.clazz ? ' bad' : seq !== undefined ? ' ok' : '');
+  return s;
+}
+function batchSelect(sku, val) {
+  const list = TC.cat.batchOf(sku);
+  if (!list.length) return `<option value="">${sku ? 'No batches for this SKU' : 'Pick a SKU first'}</option>`;
+  return batchGroups(sku, val, {blockVendor: true});
+}
+function batchMeta() {
+  const el = $('#pf-batch-h'); if (!el) return;
+  const b = TC.cat.batchOf(pv('pf-sku')).find(x => x.code === pv('pf-batch'));
+  if (!b) { el.textContent = ''; el.className = 'batchmeta'; return; }
+  const d = daysLeft(b.exp);
+  el.textContent = `Made ${dmy(b.mfg)}, expires ${dmy(b.exp)}, ${d <= 0 ? `expired ${-d} days ago` : `${d} days left`}.`;
+  el.className = 'batchmeta ' + batchState(b.exp);
+}
+const freeBins = (zone, huType) => {
+  const used = new Set(TC.rows.map(r => r.bin));
+  return TC.cat.binList.filter(b => b.zone === zone && b.huType === huType && b.status === 'ACTIVE' && !TC.cat.stock[b.code] && !used.has(b.code));
+};
+
+// specific stock / bucket-status
+function formSingle(p) {
+  const st = p === 'status';
+  return `<h3>${st ? 'Bucket or status stock' : 'Specific stock in a bin'}</h3><div class="pf-grid">
+    ${pfField('Bin', '<input type="text" id="pf-bin" data-pick="bin-any" list="dl-bins" spellcheck="false">', 'id="pf-bin-h"')}
+    ${pfField('SKU', '<input type="text" id="pf-sku" data-pick="sku" list="dl-skus" spellcheck="false">', 'id="pf-sku-h"')}
+    ${pfField('Batch', '<select id="pf-batch" data-cb-width="430"></select><small class="batchmeta" id="pf-batch-h"></small>')}
+    ${pfField('Unit', pfSeg('pf-unit', [['auto', 'From bin'], ['L2', 'Cases (L2)'], ['L0', 'Eaches (L0)']], 'auto'), 'id="pf-unit-h"')}
+    ${pfField('Quantity <small id="pf-uom"></small>', '<input type="number" id="pf-qty" min="1"><div class="quick" id="pf-quick"></div>')}
+    ${pfField('Loose eaches on top (L0)', '<input type="number" id="pf-loose" min="0" placeholder="None">' + pfSeg('pf-loosesku', [['base', 'Base SKU'], ['same', 'Same SKU']], 'base'), 'id="pf-loose-h"')}
+    ${pfField('Bucket', pfSeg('pf-bucket', [['Good', 'Good'], ['Damaged', 'Damaged']], st ? 'Damaged' : 'Good'))}
+    ${pfField('Inclusion status', pfSeg('pf-incl', [['INCLUDED', 'Included'], ['PRE-GRN', 'Pre-GRN'], ['POST-GIN', 'Post-GIN']], 'INCLUDED'))}
+  </div><div class="pf-actions" style="margin-top:16px"><button type="button" class="btn primary" id="pf-add">Add row</button><small id="pf-msg"></small></div>`;
+}
+// FEFO / batch mix
+function formFefo() {
+  return `<h3>FEFO / batch mix</h3><div class="pf-grid">
+    ${pfField('SKU', '<input type="text" id="pf-sku" data-pick="sku" list="dl-skus" spellcheck="false">', 'id="pf-sku-h"')}
+    ${pfField('Stored as', pfSeg('pf-uomsel', [['L2', 'Pallets (L2)'], ['L0', 'Loose (L0)']], 'L2'))}
+    ${pfField('Placement', pfSeg('pf-place', [['spread', 'One bin per batch'], ['one', 'All in one bin']], 'spread'))}
+    <div class="field" id="pf-place-box"></div>
+    ${pfField('Quantity per batch', '<input type="number" id="pf-qty" min="1"><div class="quick" id="pf-quick"></div>')}
+    <div class="field wide"><span>Batches <small class="hintline">Earliest expiry first. Tick the ones to stock.</small></span><div class="batchpick" id="pf-batches"></div></div>
+  </div><div class="pf-actions" style="margin-top:16px"><button type="button" class="btn primary" id="pf-add">Add rows</button><small id="pf-msg"></small></div>`;
+}
+// multi-pallet
+function formPallets() {
+  return `<h3>Several pallets in one bin</h3><div class="pf-grid">
+    ${pfField('Pallet bin', '<input type="text" id="pf-bin" data-pick="bin-pallet" list="dl-bins" spellcheck="false">', 'id="pf-bin-h"')}
+    ${pfField('SKU', '<input type="text" id="pf-sku" data-pick="sku" list="dl-skus" spellcheck="false">', 'id="pf-sku-h"')}
+    ${pfField('Pallets', '<input type="number" id="pf-count" min="1" value="2">', 'id="pf-count-h"')}
+    ${pfField('Cases on the last pallet', '<input type="number" id="pf-partial" min="0" placeholder="Full">', 'id="pf-partial-h"')}
+    ${pfField('Loose eaches on the last pallet (L0)', '<input type="number" id="pf-loose" min="0" placeholder="None">' + pfSeg('pf-loosesku', [['base', 'Base SKU'], ['same', 'Same SKU']], 'base'), 'id="pf-loose-h"')}
+    ${pfField('Batch', '<select id="pf-batch" data-cb-width="430"></select><small class="batchmeta" id="pf-batch-h"></small>')}
+    ${pfField('Batches across pallets', pfSeg('pf-rot', [['same', 'Same batch'], ['rotate', 'Rotate batches']], 'same'))}
+  </div><div class="pf-actions" style="margin-top:16px"><button type="button" class="btn primary" id="pf-add">Add rows</button><small id="pf-msg"></small></div>`;
+}
+// across many SKUs
+function formMany() {
+  const zones = TC.cat.zones.map(z => { const b = TC.cat.binList.find(x => x.zone === z); return [z, `${z} (${String(b?.huType || '').toLowerCase()}, ${b?.area || ''})`]; });
+  return `<h3>Across many SKUs</h3><div class="pf-grid">
+    ${pfField('Zone', `<select id="pf-zone">${selectOpts(zones, $('#bf-zone').value || zones[0]?.[0])}</select>`, 'id="pf-zone-h"')}
+    ${pfField('SKUs', '<input type="number" id="pf-count" min="1" value="10">', 'id="pf-count-h"')}
+    ${pfField('ABC class', pfSeg('pf-class', [['', 'Any'], ['A', 'A'], ['B', 'B'], ['C', 'C']], ''))}
+    ${pfField('SKU codes matching', '<input type="text" id="pf-regex" placeholder="Optional regular expression" spellcheck="false">')}
+    ${pfField('Unit', pfSeg('pf-unit', [['auto', 'From bin'], ['L2', 'Cases (L2)'], ['L0', 'Eaches (L0)']], 'auto'), 'id="pf-unit-h"')}
+    ${pfField('Quantity', pfSeg('pf-qtyrule', [['pallet', 'Full pallet'], ['case', 'One case'], ['custom', 'Custom']], 'pallet') + '<input type="number" id="pf-qty" min="1" placeholder="Custom quantity" style="margin-top:6px">')}
+    ${pfField('Batch expiry', pfSeg('pf-brule', [['longest', 'Longest'], ['shortest', 'Shortest'], ['near', 'Near expiry']], 'longest'))}
+    ${pfField('Bucket', pfSeg('pf-bucket', [['Good', 'Good'], ['Damaged', 'Damaged']], 'Good'))}
+    ${pfField('Inclusion status', pfSeg('pf-incl', [['INCLUDED', 'Included'], ['PRE-GRN', 'Pre-GRN'], ['POST-GIN', 'Post-GIN']], 'INCLUDED'))}
+  </div><div class="pf-actions" style="margin-top:16px"><button type="button" class="btn primary" id="pf-add">Add rows</button><small id="pf-msg"></small></div>`;
+}
+
+function quickButtons(sku, uom) {
+  const q = $('#pf-quick'); if (!q) return;
+  q.innerHTML = sku ? `<button type="button" data-qty="${caseQty(sku, uom)}">One case (${caseQty(sku, uom)})</button><button type="button" data-qty="${palletQty(sku, uom)}">Full pallet (${palletQty(sku, uom)})</button>` : '';
+  q.querySelectorAll('button').forEach(b => b.onclick = () => { $('#pf-qty').value = b.dataset.qty; });
+}
+
+// keep hints, batch lists and defaults in step with what's been picked
+function refreshPreset(p) {
+  if (p === 'single' || p === 'status') {
+    const bin = describeBin(pv('pf-bin'), '#pf-bin-h'), uom = unitUom(pfVal('pf-unit'), bin), bucket = pfVal('pf-bucket');
+    const sku = describeSku(pv('pf-sku'), bin, uom, bucket, '#pf-sku-h');
+    $('#pf-unit-h').textContent = pfVal('pf-unit') === 'auto' && bin ? `${bin.huType === 'PALLET' ? 'Pallet' : 'This'} bin, so ${uom === 'L2' ? 'cases' : 'eaches'}.` : '';
+    const loose = $('#pf-loose');
+    loose.disabled = uom !== 'L2';
+    if (loose.disabled) loose.value = '';
+    if (uom !== 'L2') { $('#pf-loose-h').textContent = 'Only when stocking cases.'; $('#pf-loose-h').className = 'hintline'; }
+    else looseHint(bin, sku, bin?.huType === 'PALLET' ? 'pallet' : 'bin');
+    const cur = pv('pf-batch');
+    $('#pf-batch').innerHTML = batchSelect(pv('pf-sku'), cur || pickBatch(pv('pf-sku'))?.code);
+    batchMeta();
+    $('#pf-uom').textContent = bin || pfVal('pf-unit') !== 'auto' ? `(${uom === 'L2' ? 'cases, L2' : 'eaches, L0'})` : '';
+    quickButtons(sku, uom);
+    if (sku && TC.pfLast !== sku.code + uom) { $('#pf-qty').value = uom === 'L2' ? palletQty(sku, uom) : caseQty(sku, uom); TC.pfLast = sku.code + uom; }
+  } else if (p === 'pallets') {
+    const bin = describeBin(pv('pf-bin'), '#pf-bin-h');
+    const sku = describeSku(pv('pf-sku'), bin, 'L2', 'Good', '#pf-sku-h');
+    if (bin && document.activeElement?.id === 'pf-bin') $('#pf-count').value = bin.cap;
+    $('#pf-count-h').textContent = bin ? `This bin holds ${plural(bin.cap, 'pallet')}.` : '';
+    $('#pf-count-h').className = 'hintline' + (bin && Number(pv('pf-count')) > bin.cap ? ' bad' : '');
+    $('#pf-partial-h').textContent = sku ? `A full pallet is ${Math.floor(sku.L2inL3 || 0)} cases.` : '';
+    looseHint(bin, sku, 'pallet');
+    $('#pf-batch').innerHTML = batchSelect(pv('pf-sku'), pv('pf-batch') || pickBatch(pv('pf-sku'))?.code);
+    batchMeta();
+  } else if (p === 'fefo') {
+    const uom = pfVal('pf-uomsel'), place = pfVal('pf-place');
+    const sku = describeSku(pv('pf-sku'), null, uom, 'Good', '#pf-sku-h');
+    const box = $('#pf-place-box');
+    if (place === 'one' && !$('#pf-bin')) {
+      box.innerHTML = `<span>Bin</span><input type="text" id="pf-bin" data-pick="bin-any" list="dl-bins" spellcheck="false"><small class="hintline" id="pf-bin-h"></small>`;
+      $('#pf-bin').addEventListener('focus', () => listFor($('#pf-bin'))); $('#pf-bin').addEventListener('input', () => listFor($('#pf-bin')));
+      $('#pf-bin').addEventListener('change', () => refreshPreset('fefo'));
+    } else if (place === 'spread' && !$('#pf-zone')) {
+      box.innerHTML = `<span>Zone</span><select id="pf-zone"></select><small class="hintline" id="pf-zone-h"></small>`;
+      $('#pf-zone').addEventListener('change', () => refreshPreset('fefo'));
+    }
+    const zoneBin = z => TC.cat.binList.find(x => x.zone === z);
+    if (place === 'spread') {
+      const cur = pv('pf-zone');
+      const zones = TC.cat.zones.filter(z => { const b = zoneBin(z); return b && (b.huType === 'PALLET' || b.huType === 'BIN') && (!sku || allowed(b, sku, uom, 'Good') !== null); });
+      $('#pf-zone').innerHTML = zones.length ? selectOpts(zones.map(z => [z, `${z} (${String(zoneBin(z).huType).toLowerCase()}, ${freeBins(z, zoneBin(z).huType).length} empty)`]), zones.includes(cur) ? cur : zones.includes($('#bf-zone').value) ? $('#bf-zone').value : zones[0]) : '<option value="">No zone allows this SKU</option>';
+      $('#pf-zone-h').textContent = sku ? 'Zones where the search table allows this SKU.' : '';
+    } else {
+      const bin = describeBin(pv('pf-bin'), '#pf-bin-h');
+      if (bin && bin.multiBatch === false) { $('#pf-bin-h').textContent += ' This bin takes one batch only.'; $('#pf-bin-h').className = 'hintline bad'; }
+    }
+    quickButtons(sku, uom);
+    if (sku && TC.pfLast !== sku.code + uom) { $('#pf-qty').value = uom === 'L2' ? palletQty(sku, uom) : caseQty(sku, uom); TC.pfLast = sku.code + uom; }
+    const list = TC.cat.batchOf(pv('pf-sku'));
+    const checked = new Set([...document.querySelectorAll('#pf-batches input:checked')].map(x => x.value).filter(c => list.some(b => b.code === c)));
+    const valid = list.filter(isValidBatch);
+    if (!checked.size && valid.length) { valid.slice(0, Math.min(3, valid.length)).forEach(b => checked.add(b.code)); }
+    $('#pf-batches').innerHTML = list.length ? list.map(b => `<label class="${b.vendorLot || !b.active ? 'dis' : ''}"><input type="checkbox" value="${esc(b.code)}" ${checked.has(b.code) ? 'checked' : ''} ${b.vendorLot || !b.active ? 'disabled' : ''}>
+      ${esc(b.code)} <small>expires ${dmy(b.exp)}, ${b.vendorLot ? 'also a vendor lot, not allowed' : !b.active ? 'inactive' : daysLeft(b.exp) <= 0 ? 'expired' : `${daysLeft(b.exp)} days left`}</small></label>`).join('')
+      : '<span class="hintline">Pick a SKU to see its batches.</span>';
+  } else if (p === 'many') {
+    const zone = pv('pf-zone'), zb = TC.cat.binList.find(b => b.zone === zone);
+    const free = zb ? freeBins(zone, zb.huType).length : 0;
+    $('#pf-zone-h').textContent = zb ? `${free} empty active bins left in this zone.` : '';
+    const u = unitUom(pfVal('pf-unit'), zb);
+    $('#pf-unit-h').textContent = zb ? `${u === 'L2' ? 'Case-pack SKUs in cases' : 'Base SKUs in eaches'}; the search table must allow ${u} here.` : '';
+    const n = manyPool().length;
+    $('#pf-count-h').textContent = `${n} SKUs qualify for this zone.`;
+    $('#pf-count-h').className = 'hintline' + (n ? '' : ' bad');
+  }
+}
+
+function manyPool() {
+  const zone = pv('pf-zone'), zb = TC.cat.binList.find(b => b.zone === zone);
+  if (!zb) return [];
+  const uom = unitUom(pfVal('pf-unit'), zb), cls = pfVal('pf-class'), bucket = pfVal('pf-bucket');
+  let re = null; try { re = pv('pf-regex') ? new RegExp(pv('pf-regex')) : null; } catch {}
+  const ok = s => s.active && s.clazz && (!cls || s.clazz === cls) && (!re || re.test(s.code)) && allowed(zb, s, uom, bucket) !== null && pickBatch(s.code, pfVal('pf-brule'));
+  let pool = TC.cat.skuList.filter(s => ok(s) && (uom === 'L2' ? !s.base && s.L2inL3 >= 1 : s.base && s.L0inL2 > 0));
+  if (!pool.length) pool = TC.cat.skuList.filter(s => ok(s) && (uom === 'L2' ? s.L2inL3 >= 1 : s.L0inL2 > 0));
+  return pool;
+}
+
+function addFromPreset(p) {
+  const msg = t => { $('#pf-msg').textContent = t; };
+  const before = TC.rows.length;
+  if (p === 'single' || p === 'status') {
+    if (!binInfo(pv('pf-bin')) || !skuInfo(pv('pf-sku'))) return msg('Pick a bin and a SKU from the list.');
+    if (!(Number(pv('pf-qty')) > 0)) return msg('Enter a quantity.');
+    const bin = binInfo(pv('pf-bin')), sku = skuInfo(pv('pf-sku')), uom = unitUom(pfVal('pf-unit'), bin);
+    const main = addRow({bin: bin.code, sku: sku.code, uom, qty: Number(pv('pf-qty')), batch: pv('pf-batch'), bucket: pfVal('pf-bucket'), inclusion: pfVal('pf-incl')});
+    const loose = Number(pv('pf-loose'));
+    if (uom === 'L2' && loose > 0) {
+      const base = looseSku(sku, pfVal('pf-loosesku'));
+      addRow({bin: bin.code, sku: base.code, uom: 'L0', qty: loose, batch: looseBatch(base, main.batch), bucket: main.bucket, inclusion: main.inclusion, hu: main.hu || undefined});
+    }
+    $('#pf-bin').value = ''; $('#pf-loose').value = ''; refreshPreset(p);
+  } else if (p === 'pallets') {
+    const bin = binInfo(pv('pf-bin')), sku = skuInfo(pv('pf-sku'));
+    if (!bin || !sku) return msg('Pick a pallet bin and a SKU from the list.');
+    const n = Number(pv('pf-count')) || 1, full = Math.max(1, Math.floor(sku.L2inL3 || 1)), last = Number(pv('pf-partial'));
+    const valid = TC.cat.batchOf(sku.code).filter(isValidBatch);
+    for (let i = 0; i < n; i++) {
+      const batch = pfVal('pf-rot') === 'rotate' && valid.length ? valid[i % valid.length].code : pv('pf-batch');
+      addRow({bin: bin.code, sku: sku.code, uom: 'L2', qty: i === n - 1 && last > 0 ? last : full, batch, hu: nextHu()});
+    }
+    const loose = Number(pv('pf-loose')), lastRow = TC.rows[TC.rows.length - 1];
+    if (loose > 0) {
+      const base = looseSku(sku, pfVal('pf-loosesku'));
+      addRow({bin: bin.code, sku: base.code, uom: 'L0', qty: loose, batch: looseBatch(base, lastRow.batch), hu: lastRow.hu});
+    }
+  } else if (p === 'fefo') {
+    const sku = skuInfo(pv('pf-sku')), uom = pfVal('pf-uomsel'), qty = Number(pv('pf-qty'));
+    const batches = [...document.querySelectorAll('#pf-batches input:checked')].map(x => x.value);
+    if (!sku) return msg('Pick a SKU from the list.');
+    if (!batches.length) return msg('Tick at least one batch.');
+    if (!(qty > 0)) return msg('Enter a quantity per batch.');
+    let bins;
+    if (pfVal('pf-place') === 'one') {
+      if (!binInfo(pv('pf-bin'))) return msg('Pick a bin from the list.');
+      bins = batches.map(() => pv('pf-bin'));
+    } else {
+      const zb = TC.cat.binList.find(b => b.zone === pv('pf-zone'));
+      const free = zb ? freeBins(zb.zone, zb.huType) : [];
+      if (free.length < batches.length) return msg(`Only ${free.length} empty bins left in that zone.`);
+      bins = free.slice(0, batches.length).map(b => b.code);
+    }
+    batches.forEach((batch, i) => {
+      const bin = binInfo(bins[i]);
+      addRow({bin: bins[i], sku: sku.code, uom, qty, batch, hu: bin?.huType === 'PALLET' ? nextHu() : undefined});
+    });
+  } else if (p === 'many') {
+    const zone = pv('pf-zone'), zb = TC.cat.binList.find(b => b.zone === zone);
+    if (!zb) return msg('Pick a zone.');
+    const uom = unitUom(pfVal('pf-unit'), zb), pool = manyPool(), n = Math.min(Number(pv('pf-count')) || 1, pool.length);
+    const free = freeBins(zone, zb.huType);
+    if (!pool.length) return msg('No SKU qualifies for this zone with these filters.');
+    const count = Math.min(n, free.length);
+    for (let i = 0; i < count; i++) {
+      const s = pool[i], rule = pfVal('pf-qtyrule');
+      const qty = rule === 'custom' ? Number(pv('pf-qty')) || 1 : rule === 'case' ? caseQty(s, uom) : palletQty(s, uom);
+      addRow({bin: free[i].code, sku: s.code, uom, qty, batchMode: pfVal('pf-brule'), bucket: pfVal('pf-bucket'), inclusion: pfVal('pf-incl'),
+        hu: zb.huType === 'PALLET' ? nextHu() : undefined});
+    }
+    const asked = Number(pv('pf-count')) || 1;
+    if (count < n) msg(`Added ${count}. The zone ran out of empty bins.`);
+    else if (n < asked) msg(`Added ${count}. Only ${plural(pool.length, 'SKU')} qualify for this zone with these filters.`);
+  }
+  const added = TC.rows.length - before;
+  if (added && !$('#pf-msg').textContent.startsWith('Added')) msg(`Added ${plural(added, 'row')}.`);
+  renderGrid(); scheduleValidate();
+  if (p !== 'single' && p !== 'status') refreshPreset(p);
+}
+
+$('#wh').addEventListener('change', () => { TC.rows = []; TC.last = null; loadCatalog(); });
+
+window.addEventListener('hashchange', () => showMode(location.hash.slice(1)));
+showMode(location.hash.slice(1) || 'case');
+loadCatalog();
+</script>
+</body>
+</html>

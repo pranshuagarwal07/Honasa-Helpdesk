@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Compare nodes · UAT desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try{var r=localStorage.getItem('uatdesk.rail');if(r==='min'||(!r&&innerWidth>860&&innerWidth<=1180))document.documentElement.classList.add('rail-min')}catch(e){}</script>
+<link rel="stylesheet" href="/app.css">
+<style>
+/* ---- compare nodes ----------------------------------------------------------
+   A is the accent blue, B a violet: two sides, neither one the orange of the Compare button. */
+:root { --side-a: var(--rack); --side-b: #7445D1; --diff-soft: color-mix(in srgb, var(--label) 30%, var(--panel)); }
+@media (prefers-color-scheme: dark) {
+  :root { --side-b: #B99BFF; --diff-soft: color-mix(in srgb, var(--label) 14%, var(--panel)); }
+  .pill.d { color: var(--label); }
+}
+:root { --side-a-soft: color-mix(in srgb, var(--side-a) 11%, var(--panel)); --side-b-soft: color-mix(in srgb, var(--side-b) 11%, var(--panel)); }
+.cmp-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; }
+.nodes { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 20px; align-items: start; }
+.node { margin: 0; padding: 0; border: 0; min-width: 0; display: grid; gap: 14px; }
+.node legend { padding: 0; float: left; width: 100%; display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; }
+.node legend + * { clear: both; }
+.side { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); font-size: 12px; font-weight: 600; background: var(--side-a); color: var(--on-accent); flex: none; }
+.side.b { background: var(--side-b); }
+.node .field { margin: 0; }
+.node .who { min-height: 18px; font-size: 13px; color: var(--mut); }
+.node .who b { color: var(--ink); font-weight: 600; }
+.node .who.err { padding: 10px 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--warn); }
+.swap { align-self: center; margin-top: 30px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--panel); color: var(--mut); cursor: pointer; display: grid; place-items: center; }
+.swap:hover { background: var(--hover); color: var(--ink); }
+.swap svg { width: 18px; height: 18px; }
+.cmp-opts { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 28px; align-items: end; }
+.sec-head { display: flex; align-items: baseline; gap: 14px; }
+.sec-head .link { font-size: 12.5px; color: var(--mut); font-weight: 400; }
+.sec-head .link:hover { color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip label { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 13.5px;
+  cursor: pointer; color: var(--mut); background: var(--panel); transition: background-color .12s ease, color .12s ease; }
+.chip label:hover { background: var(--hover); color: var(--ink); }
+.chip input:checked + label { background: var(--rack-soft); border-color: transparent; color: var(--rack); font-weight: 500; }
+/* a tick on the chosen ones; every chip keeps the room for it, so toggling never reflows the rows */
+.chip label::before { content: ""; width: 4px; height: 8px; margin: -2px 1px 0 0; border: solid transparent; border-width: 0 1.75px 1.75px 0; transform: rotate(45deg); flex: none; }
+.chip input:checked + label::before { border-color: currentColor; }
+.chip input:focus-visible + label { outline: 2px solid var(--focus); outline-offset: 2px; }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; font-size: 14px; }
+.toggles label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.toggles input { width: 16px; height: 16px; accent-color: var(--rack); }
+.run { display: flex; align-items: center; gap: 14px; }
+.run small { color: var(--mut); font-size: 13px; }
+
+.cmp-intro { margin-top: 28px; color: var(--mut); max-width: 72ch; font-size: 14.5px; line-height: 1.65; }
+.cmp-intro b { color: var(--ink); font-weight: 600; }
+
+/* results */
+.vs { margin-top: 28px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.vs-side { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.vs-side div { min-width: 0; }
+.vs-side strong { display: block; font-size: 19px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.vs-side span.meta { font-size: 13px; color: var(--mut); }
+.vs .vs-word { font-size: 13px; font-weight: 500; color: var(--faint); }
+.board { margin-top: 18px; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.board a, .board .bh { display: grid; grid-template-columns: minmax(150px, 1.1fr) repeat(4, 86px) minmax(120px, 1.4fr); gap: 12px; align-items: center; padding: 11px 16px; background: var(--panel); color: var(--ink); text-decoration: none; font-size: 14px; }
+.board a:hover { background: var(--hover); }
+.board .bh { background: var(--sunken); font-size: 12.5px; color: var(--mut); font-weight: 600; }
+.board .bh:hover { background: var(--sunken); }
+.board .n { font-variant-numeric: tabular-nums; }
+.board .sh { display: none; }
+.board .n.zero { color: var(--faint); }
+.board .nm { font-weight: 600; }
+.board .clean { color: var(--mut); font-weight: 400; }
+.bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--sunken); }
+.bar i { display: block; height: 100%; }
+.bar .d, .key-d { background: var(--label); }
+.bar .a, .key-a { background: var(--side-a); }
+.bar .b, .key-b { background: var(--side-b); }
+.bar .s, .key-s { background: color-mix(in srgb, var(--mut) 30%, transparent); }
+
+.filters { position: sticky; top: 0; z-index: 4; margin-top: 22px; padding: 12px 0; background: var(--floor); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.filters input[type=search] { flex: 1 1 260px; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--panel); color: var(--ink); font-size: 14.5px; }
+.filters .chip label::before { content: ""; width: 10px; height: 10px; margin: 0; border: 1.5px solid currentColor; border-radius: 3px; transform: none; flex: none; }
+.filters .chip input:checked + label { background: var(--panel); border-color: var(--line-strong); color: var(--ink); }
+.filters .chip input:checked + label::before { width: 10px; height: 10px; margin: 0; border-width: 1.5px; transform: none; }
+.filters .chip.d label::before { background: var(--label); border-color: var(--label); }
+.filters .chip.a label::before { background: var(--side-a); border-color: var(--side-a); }
+.filters .chip.b label::before { background: var(--side-b); border-color: var(--side-b); }
+.filters .chip input:not(:checked) + label::before { background: transparent; }
+.filters .chip input:checked + label::before { box-shadow: none; }
+.filters .chip label:hover, .filters .chip input:checked + label:hover { background: var(--hover); }
+.filters .export { margin-left: auto; }
+
+.sec { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); scroll-margin-top: 70px; }
+.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 20px; }
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut); transform: rotate(-45deg); transition: transform .15s; flex: none; }
+.sec[open] > summary::before { transform: rotate(45deg); }
+.sec > summary h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { padding: 3px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pill.d { background: var(--diff-soft); }
+.pill.a { background: var(--side-a-soft); color: var(--side-a); }
+.pill.b { background: var(--side-b-soft); color: var(--side-b); }
+.pill.s { color: var(--mut); padding-left: 0; font-weight: 400; }
+.sec-body { padding: 0 20px 20px; }
+.tbl { margin-top: 16px; }
+.tbl:first-child { margin-top: 0; }
+.tbl-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.tbl-head code { font: 500 14px/1.3 var(--mono); }
+.tbl-head .pills { margin-left: auto; }
+.tnotes { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--mut); display: grid; gap: 3px; }
+.tnotes li::before { content: "i"; display: inline-grid; place-items: center; width: 15px; height: 15px; margin-right: 7px; border-radius: 50%; border: 1px solid currentColor; font: 600 9.5px/1 var(--font); vertical-align: 1px; }
+table.dt { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; font-size: 13.5px; }
+.dt th { text-align: left; font-size: 12.5px; color: var(--mut); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.dt th.ha, .dt th.hb { color: var(--ink); }
+.dt th.ha { box-shadow: inset 0 -2px var(--side-a); }
+.dt th.hb { box-shadow: inset 0 -2px var(--side-b); }
+.dt td { padding: 7px 10px; vertical-align: top; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; white-space: normal; }
+.dt td.k { border-left: 3px solid var(--label); font-weight: 600; }
+.dt tr.a td.k { border-left-color: var(--side-a); }
+.dt tr.b td.k { border-left-color: var(--side-b); }
+.dt td.k small { display: block; margin-top: 3px; font-weight: 400; font-size: 12px; color: var(--mut); }
+.dt td.f { color: var(--mut); font-family: var(--mono); font-size: 12.5px; }
+.dt td.v { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+.dt tr.d td.v.va { background: var(--side-a-soft); }
+.dt tr.d td.v.vb { background: var(--side-b-soft); }
+.dt td.v.none { color: var(--mut); font-family: inherit; font-style: italic; }
+.dt td.v small { display: block; margin-top: 3px; font-family: inherit; font-size: 11.5px; color: var(--mut); white-space: normal; }
+.dt details { margin-top: 0; }
+.dt details summary { cursor: pointer; font-family: inherit; color: var(--ink); }
+.dt dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; }
+.dt details dl { margin-top: 6px; }
+.dt dt { color: var(--mut); }
+.dt dd { margin: 0; }
+.matching { margin-top: 14px; font-size: 13px; color: var(--mut); }
+.matching code { font-family: var(--mono); font-size: 12px; }
+.none-left { padding: 18px 0 4px; color: var(--mut); font-size: 14px; }
+.loading { margin-top: 28px; font-size: 15px; }
+@media (prefers-reduced-motion: reduce) { .sec > summary::before { transition: none; } }
+@media (max-width: 1060px) {
+  .board a, .board .bh { grid-template-columns: minmax(120px, 1fr) repeat(4, 64px); }
+  .board a .bar, .board .bh > span:last-child { display: none; }
+}
+@media (max-width: 860px) {
+  .nodes { grid-template-columns: minmax(0, 1fr); }
+  .swap { justify-self: center; margin-top: 0; transform: rotate(90deg); }
+  .cmp-opts { grid-template-columns: minmax(0, 1fr); }
+  .run .btn { flex: 1; min-height: 44px; }
+  .vs { grid-template-columns: minmax(0, 1fr); }
+  .vs .vs-word { display: none; }
+}
+@media (max-width: 640px) {
+  .cmp-card { padding: 18px 16px; }
+  .board a, .board .bh { grid-template-columns: minmax(0, 1fr) repeat(4, 38px); gap: 6px; padding: 10px 12px; font-size: 13px; }
+  .board .lg { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .board .sh { display: inline; }
+  table.dt, .dt tbody, .dt tr, .dt td { display: block; width: 100%; }
+  .dt thead { display: none; }
+  .dt td { border-bottom: 0; padding: 4px 8px; }
+  .dt tr { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  .dt td.v::before { content: attr(data-side) "  "; font-family: inherit; font-weight: 600; color: var(--mut); }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<!--#rail-->
+<div class="stage">
+<main>
+  <div class="page-head">
+    <div>
+      <h2>Compare nodes</h2>
+      <p>Put two warehouses side by side, in the same environment or different ones, and see every master and configuration difference between them.</p>
+    </div>
+  </div>
+
+  <form id="cmp-form" class="cmp-card" novalidate>
+    <div class="nodes">
+      <fieldset class="node a">
+        <legend><span class="side">A</span>Node A</legend>
+        <label class="field"><span>Environment</span><select id="a-env"></select></label>
+        <label class="field"><span>Warehouse id</span><input type="text" id="a-wh" list="a-list" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="Pick or type a warehouse id"></label>
+        <datalist id="a-list"></datalist>
+        <div class="who" id="a-who" aria-live="polite"></div>
+      </fieldset>
+      <button type="button" class="swap" id="swap" title="Swap A and B" aria-label="Swap A and B"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15l-4-4"/><path d="M20 16H5l4 4"/></svg></button>
+      <fieldset class="node b">
+        <legend><span class="side b">B</span>Node B</legend>
+        <label class="field"><span>Environment</span><select id="b-env"></select></label>
+        <label class="field"><span>Warehouse id</span><input type="text" id="b-wh" list="b-list" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="Pick or type a warehouse id"></label>
+        <datalist id="b-list"></datalist>
+        <div class="who" id="b-who" aria-live="polite"></div>
+      </fieldset>
+    </div>
+    <div class="cmp-opts">
+      <div>
+        <div class="field" role="group" aria-labelledby="sec-lbl"><span class="sec-head"><span id="sec-lbl">What to compare</span><button type="button" class="link" data-all="1">All</button><button type="button" class="link" data-all="0">None</button></span><div class="chips" id="sections"></div></div>
+        <div class="toggles">
+          <label><input type="checkbox" id="o-inactive"> Include deactivated rows</label>
+          <label><input type="checkbox" id="o-bins"> Compare bins one by one</label>
+        </div>
+      </div>
+      <div class="run">
+        <small id="run-msg" aria-live="polite"></small>
+        <button type="submit" class="btn primary" id="run">Compare</button>
+      </div>
+    </div>
+  </form>
+
+  <div id="out">
+    <p class="cmp-intro">Rows are matched by their codes, not internal ids, so two warehouses in different environments line up. References to other rows (a zone's area, a bin's type, a SKU) are compared by code too. Only SELECT queries run. <b>Nothing is written to either environment.</b></p>
+  </div>
+</main>
+</div>
+</div>
+
+<script src="/rail.js"></script>
+<script src="/combo.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+try { $('#wh').value = localStorage.getItem('whId') || '__WH__'; } catch { $('#wh').value = '__WH__'; }
+$('#wh').addEventListener('change', () => { try { localStorage.setItem('whId', $('#wh').value.trim()); } catch {} });
+
+const S = { envs: [], sections: [], wh: { a: [], b: [] }, result: null, filt: { D: true, A: true, B: true, q: '' } };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({ error: 'The server sent back something that is not JSON.' }));
+  if (!r.ok) throw new Error(body.error || r.statusText);
+  return body;
+}
+
+// ---- form ------------------------------------------------------------------------
+async function init() {
+  let meta;
+  try { meta = await api('/api/compare/envs'); }
+  catch (e) { $('#out').innerHTML = `<div class="alert" role="alert">Couldn't load the environment list: ${esc(e.message)}. Restart the app with run.bat.</div>`; return; }
+  S.envs = meta.envs; S.sections = meta.sections;
+  if (!S.envs.length) { $('#out').innerHTML = '<div class="alert" role="alert">No environments set up. Add them to config/envs.json, then reload.</div>'; return; }
+  const last = store.get('cmp:last') || {};
+  for (const side of ['a', 'b']) {
+    const sel = $('#' + side + '-env');
+    sel.innerHTML = S.envs.map((e) => `<option>${esc(e)}</option>`).join('');
+    const want = last[side]?.env || (side === 'a' ? '__ENV__' : S.envs.find((e) => e !== '__ENV__') || S.envs[0]);
+    if (S.envs.includes(want)) sel.value = want;
+    $('#' + side + '-wh').value = last[side]?.whId || (side === 'a' ? $('#wh').value : '');
+    sel.addEventListener('change', () => loadWarehouses(side));
+    $('#' + side + '-wh').addEventListener('input', () => who(side));
+  }
+  const on = new Set(last.sections || S.sections.filter((s) => s.on).map((s) => s.id));
+  $('#sections').innerHTML = S.sections.map((s) => `<span class="chip"><input type="checkbox" id="s-${s.id}" value="${s.id}" ${on.has(s.id) ? 'checked' : ''}><label for="s-${s.id}">${esc(s.name)}</label></span>`).join('');
+  document.querySelectorAll('[data-all]').forEach((b) => b.onclick = () => document.querySelectorAll('#sections input').forEach((i) => { i.checked = b.dataset.all === '1'; }));
+  $('#o-inactive').checked = !!last.inactive;
+  $('#o-bins').checked = !!last.binRows;
+  loadWarehouses('a'); loadWarehouses('b');
+}
+
+async function loadWarehouses(side) {
+  const env = $('#' + side + '-env').value;
+  $('#' + side + '-who').textContent = 'Loading warehouses…';
+  try {
+    const r = await api('/api/compare/warehouses?env=' + encodeURIComponent(env));
+    S.wh[side] = r.warehouses;
+    $('#' + side + '-list').innerHTML = r.warehouses.map((w) => `<option value="${esc(w.id)}">${esc([w.name, w.code].filter(Boolean).join(' · '))}</option>`).join('');
+    who(side, r.err ? `Couldn't list warehouses: ${r.err}` : null);
+  } catch (e) {
+    S.wh[side] = [];
+    who(side, e.message);
+  }
+}
+
+function who(side, err) {
+  const el = $('#' + side + '-who'), id = $('#' + side + '-wh').value.trim();
+  el.classList.toggle('err', !!err);
+  if (err) { el.textContent = err; return; }
+  const w = S.wh[side].find((x) => x.id === id);
+  if (w) el.innerHTML = `<b>${esc(w.name || w.code || 'Unnamed')}</b>${w.code && w.name ? ' · ' + esc(w.code) : ''}`;
+  else if (id && !/^\d+$/.test(id)) el.textContent = 'A warehouse id is all digits.';
+  else if (id && S.wh[side].length) el.textContent = `Not in this environment's warehouse list.`;
+  else el.textContent = S.wh[side].length ? `${S.wh[side].length} warehouse${S.wh[side].length === 1 ? '' : 's'} in this environment.` : '';
+}
+
+$('#swap').onclick = () => {
+  for (const f of ['env', 'wh']) { const a = $('#a-' + f).value; $('#a-' + f).value = $('#b-' + f).value; $('#b-' + f).value = a; }
+  [S.wh.a, S.wh.b] = [S.wh.b, S.wh.a];
+  const la = $('#a-list').innerHTML; $('#a-list').innerHTML = $('#b-list').innerHTML; $('#b-list').innerHTML = la;
+  who('a'); who('b');
+};
+
+$('#cmp-form').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const body = {
+    a: { env: $('#a-env').value, whId: $('#a-wh').value.trim() },
+    b: { env: $('#b-env').value, whId: $('#b-wh').value.trim() },
+    sections: [...document.querySelectorAll('#sections input:checked')].map((i) => i.value),
+    inactive: $('#o-inactive').checked, binRows: $('#o-bins').checked,
+  };
+  for (const s of ['a', 'b']) {
+    if (!/^\d+$/.test(body[s].whId)) { $('#run-msg').textContent = `Node ${s.toUpperCase()} needs a warehouse id.`; $('#' + s + '-wh').focus(); return; }
+  }
+  if (!body.sections.length) { $('#run-msg').textContent = 'Pick at least one thing to compare.'; return; }
+  if (body.a.env === body.b.env && body.a.whId === body.b.whId) { $('#run-msg').textContent = 'A and B are the same node.'; return; }
+  store.set('cmp:last', body);
+  $('#run-msg').textContent = '';
+  $('#run').disabled = true;
+  const t0 = Date.now();
+  $('#out').innerHTML = `<div class="loading" role="status"><span>Reading both nodes… <span id="secs">0</span>s</span></div>`;
+  const tick = setInterval(() => { const el = $('#secs'); if (el) el.textContent = Math.round((Date.now() - t0) / 1000); }, 500);
+  try {
+    S.result = await api('/api/compare/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    render();
+  } catch (e) {
+    $('#out').innerHTML = `<div class="alert" role="alert">${esc(e.message)}</div>`;
+  } finally { clearInterval(tick); $('#run').disabled = false; }
+};
+
+// ---- results ---------------------------------------------------------------------
+const WORD = { D: 'Different', A: 'Only in A', B: 'Only in B' };
+const pills = (x) => [
+  x.diff ? `<span class="pill d">${x.diff} different</span>` : '',
+  x.onlyA ? `<span class="pill a">${x.onlyA} only in A</span>` : '',
+  x.onlyB ? `<span class="pill b">${x.onlyB} only in B</span>` : '',
+  `<span class="pill s">${x.same} same</span>`,
+].join('');
+const nodeLabel = (n) => n.name || `Warehouse ${n.whId}`;
+
+function render() {
+  const r = S.result;
+  const total = (x) => x.diff + x.onlyA + x.onlyB;
+  r.sections.sort((x, y) => (total(y) > 0) - (total(x) > 0));
+  const secs = r.sections;
+  const max = Math.max(1, ...secs.map((s) => s.same + total(s)));
+  const w = (n, all) => `${(100 * n / all).toFixed(2)}%`;
+  $('#out').innerHTML = `
+    <div class="vs">
+      <div class="vs-side"><span class="side">A</span><div><strong>${esc(nodeLabel(r.a))}</strong><span class="meta"><span class="rl sm">${esc(r.a.env)}</span> ${esc(r.a.whId)}</span></div></div>
+      <span class="vs-word" aria-hidden="true">vs</span>
+      <div class="vs-side"><span class="side b">B</span><div><strong>${esc(nodeLabel(r.b))}</strong><span class="meta"><span class="rl sm">${esc(r.b.env)}</span> ${esc(r.b.whId)}</span></div></div>
+      <a class="btn" href="/api/compare/export?token=${encodeURIComponent(r.token)}">Download Excel</a>
+    </div>
+    <div class="board" role="list">
+      <div class="bh"><span>Section</span><span><span class="lg">Different</span><span class="sh" aria-hidden="true">Diff</span></span><span><span class="lg">Only in A</span><span class="sh" aria-hidden="true">A</span></span><span><span class="lg">Only in B</span><span class="sh" aria-hidden="true">B</span></span><span>Same</span><span></span></div>
+      ${secs.map((s) => {
+        const all = s.same + total(s) || 1;
+        return `<a href="#sec-${s.id}" role="listitem" data-open="${s.id}">
+          <span class="nm">${esc(s.name)}${total(s) ? '' : ' <span class="clean">· all match</span>'}</span>
+          <span class="n ${s.diff ? '' : 'zero'}" title="Different">${s.diff}</span>
+          <span class="n ${s.onlyA ? '' : 'zero'}" title="Only in A">${s.onlyA}</span>
+          <span class="n ${s.onlyB ? '' : 'zero'}" title="Only in B">${s.onlyB}</span>
+          <span class="n zero" title="Same">${s.same}</span>
+          <span class="bar" aria-hidden="true"><i class="d" style="width:${w(s.diff, all)}"></i><i class="a" style="width:${w(s.onlyA, all)}"></i><i class="b" style="width:${w(s.onlyB, all)}"></i><i class="s" style="width:${w(s.same, all)}"></i></span>
+        </a>`;
+      }).join('')}
+    </div>
+    <div class="filters">
+      <input type="search" id="f-q" placeholder="Filter by table, code, field or value" value="${esc(S.filt.q)}" aria-label="Filter the differences">
+      <div class="chips" role="group" aria-label="Show">
+        ${['D', 'A', 'B'].map((k) => `<span class="chip ${k.toLowerCase()}"><input type="checkbox" id="f-${k}" ${S.filt[k] ? 'checked' : ''}><label for="f-${k}">${WORD[k]}</label></span>`).join('')}
+      </div>
+    </div>
+    <div id="secs-out"></div>`;
+  document.querySelectorAll('.board a').forEach((a) => a.addEventListener('click', () => { const d = document.getElementById('sec-' + a.dataset.open); if (d) d.open = true; }));
+  $('#f-q').addEventListener('input', (e) => { S.filt.q = e.target.value; renderSections(); });
+  for (const k of ['D', 'A', 'B']) $('#f-' + k).addEventListener('change', (e) => { S.filt[k] = e.target.checked; renderSections(); });
+  renderSections();
+}
+
+function renderSections() {
+  const r = S.result, q = S.filt.q.trim().toLowerCase();
+  const la = esc(`A · ${nodeLabel(r.a)}`), lb = esc(`B · ${nodeLabel(r.b)}`);
+  const hit = (t, row) => !q || [t.table, row.key, ...row.fields.flat()].some((x) => String(x ?? '').toLowerCase().includes(q));
+  const html = [];
+  for (const s of r.sections) {
+    const tables = s.tables.map((t) => ({ t, rows: t.rows.filter((row) => S.filt[row.s] && hit(t, row)) }));
+    const shown = tables.filter((x) => x.rows.length);
+    const clean = s.tables.filter((t) => !t.skipped && !(t.diff + t.onlyA + t.onlyB));
+    const missing = s.tables.filter((t) => t.skipped);
+    const anyDiff = s.diff + s.onlyA + s.onlyB > 0;
+    if (q && !shown.length) continue;
+    html.push(`<details class="sec" id="sec-${s.id}" ${anyDiff && (shown.length || !q) ? 'open' : ''}>
+      <summary><h3>${esc(s.name)}</h3><span class="pills">${pills(s)}</span></summary>
+      <div class="sec-body">
+        ${shown.map(({ t, rows }) => tableBlock(t, rows, la, lb)).join('') || (anyDiff ? '<p class="none-left">No differences match the filter.</p>' : '<p class="none-left">Everything in this section matches.</p>')}
+        ${clean.length ? `<p class="matching">Matching: ${clean.map((t) => `<code>${esc(t.table)}</code> (${t.same})`).join(', ')}</p>` : ''}
+        ${clean.filter((t) => t.notes.length).map((t) => `<ul class="tnotes">${t.notes.map((n) => `<li><code>${esc(t.table)}</code>: ${esc(n)}</li>`).join('')}</ul>`).join('')}
+        ${missing.length ? `<p class="matching">Not in either schema: ${missing.map((t) => `<code>${esc(t.table)}</code>`).join(', ')}</p>` : ''}
+      </div>
+    </details>`);
+  }
+  $('#secs-out').innerHTML = html.join('') || '<p class="none-left">Nothing matches the filter.</p>';
+}
+
+function tableBlock(t, rows, la, lb) {
+  const body = rows.map((row) => {
+    const cls = row.s.toLowerCase();
+    const src = row.src || [];
+    const srcNote = (i) => (src[i] ? `<small>set on ${esc(src[i])}</small>` : '');
+    if (row.s === 'D') {
+      return row.fields.map((f, i) => `<tr class="d">
+        ${i === 0 ? `<td class="k" rowspan="${row.fields.length}">${esc(row.key)}<small>${WORD.D}</small></td>` : ''}
+        <td class="f">${esc(f[0])}</td>
+        <td class="v va${f[1] === '' ? ' none' : ''}" data-side="A">${f[1] === '' ? 'not set' : esc(f[1])}${srcNote(0)}</td>
+        <td class="v vb${f[2] === '' ? ' none' : ''}" data-side="B">${f[2] === '' ? 'not set' : esc(f[2])}${srcNote(1)}</td></tr>`).join('');
+    }
+    // a row on one side only: one line, full contents folded away
+    const list = `<dl>${row.fields.map((f) => `<dt>${esc(f[0])}</dt><dd>${esc(f[1])}</dd>`).join('')}</dl>`;
+    const one = row.fields.length === 1
+      ? `${esc(row.fields[0][1])}${srcNote(row.s === 'A' ? 0 : 1)}`
+      : row.fields.length <= 5 ? list : `<details><summary>${row.fields.length} fields</summary>${list}</details>`;
+    const field = row.fields.length === 1 ? esc(row.fields[0][0]) : 'whole row';
+    const missing = `<td class="v none" data-side="${row.s === 'A' ? 'B' : 'A'}">missing</td>`;
+    const present = `<td class="v" data-side="${row.s}">${one}</td>`;
+    return `<tr class="${cls}"><td class="k">${esc(row.key)}<small>${WORD[row.s]}</small></td><td class="f">${field}</td>${row.s === 'A' ? present + missing : missing + present}</tr>`;
+  }).join('');
+  return `<section class="tbl">
+    <div class="tbl-head"><code>${esc(t.table)}</code><span class="pills">${pills(t)}</span></div>
+    ${t.notes.length ? `<ul class="tnotes">${t.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    <table class="dt">
+      <colgroup><col style="width:24%"><col style="width:16%"><col style="width:30%"><col style="width:30%"></colgroup>
+      <thead><tr><th>${t.summary ? 'Zone · bin type · status' : 'Row'}</th><th>Field</th><th class="ha">${la}</th><th class="hb">${lb}</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </section>`;
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "SBX_HONASA_UAT": {
+    "host": "db-host.example.internal",
+    "port": 5432,
+    "user": "readonly_user",
+    "password": "",
+    "databases": { "wms": "postgres", "encarta": "encarta", "backbone": "backbone" },
+    "cincout": "http://cincout.example.internal",
+    "defaultWhId": "",
+    "appPort": 8765
+  },
+  "SBX_HONASA_PROD": {
+    "host": "db-host.example.internal",
+    "port": 5432,
+    "user": "readonly_user",
+    "password": "",
+    "databases": { "wms": "postgres", "encarta": "encarta", "backbone": "backbone" },
+    "defaultWhId": "",
+    "appPort": 8766,
+    "readOnly": true
+  }
+}
