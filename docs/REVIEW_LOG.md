@@ -1,6 +1,6 @@
 # UAT desk review log
 
-> Written before the 2026-10-04 reorganisation: `inv.js` is now `lib/inventory.js`, `test-sheets/` is now `scripts/` (the generator) and `samples/check-tests/` (the sheets).
+> Written before the 2026-10-04 and 2026-10-09 reorganisations. Old names: `inv.js` / `lib/inventory.js` is now `lib/inventory/` plus `lib/wms/`, `lib/planners/` and `lib/im-upload/`; `index.html` is `public/pages/acks.html` with its script in `public/js/acks.js`; `app.css` is `public/css/app.css`; `combo.js` is `public/js/combo.js`; `test-sheets/` is `scripts/` (the generator) and `samples/check-tests/` (the sheets). README.md has the current folder map.
 
 Review loop over the whole app: read each area critically, fix what is clearly wrong, then test
 against UAT on port 8799. The test never touches the 8765/8766 servers, never writes to a database
