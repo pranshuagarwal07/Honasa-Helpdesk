@@ -30,7 +30,9 @@ Tabs.init({name: 'Operations', tabs: [
       lede: 'Stock and pallets the WMS still treats as busy, and the sessions holding up the inventory upload.'}]},
   {id: 'api', label: 'API triggers', features: [
     {id: 'pack-staging', label: 'Pack → staging', view: '#v-pack', title: 'Pack pallet to staging',
-      lede: 'Cartons are packed on a pallet at a pack station but no move-to-staging task appears. Check the pallet, then send the event the device’s Move to Next Task would have sent.'}]}],
+      lede: 'Cartons are packed on a pallet at a pack station but no move-to-staging task appears. Check the pallet, then send the event the device’s Move to Next Task would have sent.'},
+    {id: 'slotting', label: 'Putaway slotting', view: '#v-slot', title: 'Re-run drop slotting',
+      lede: 'Pallets whose putaway found no destination bin don’t get another try on their own. See which rows a run would retry, then send the event that runs drop slotting for the whole warehouse again.'}]}],
   // the old one-level #mode links
   legacy: {ready: 'golive/ready', putaway: 'putaway/explain', stuck: 'health/stuck'}});
 
@@ -188,30 +190,11 @@ function stuckHtml(r) {
   </div>`;
 }
 
-// ---- API triggers: pack pallet -> staging (lib/ops/pack-staging.js) ----------------------------
-{
-  const last = store.get('ops.pack');
-  if (last) { $('#k-task').value = last.task || ''; $('#k-pallet').value = last.pallet || ''; }
-}
-let PACK = null;   // the last check: the send button's label comes from it
-async function packCheck(note = '') {
-  const out = $('#pack-out');
-  if (needWh(out)) return;
-  const task = $('#k-task').value.trim(), pallet = $('#k-pallet').value.trim();
-  if (!task) { $('#k-task').focus(); return; }
-  if (!pallet) { $('#k-pallet').focus(); return; }
-  store.set('ops.pack', { task, pallet });
-  const go = $('#k-go'); go.disabled = true; go.textContent = 'Checking…';
-  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading the task, the pallet and its cartons…</div>';
-  try { PACK = await api('/api/ops/pack-staging?' + new URLSearchParams({ whId: wh(), task, pallet })); out.innerHTML = packHtml(PACK, note); }
-  catch (err) { out.innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`; }
-  go.disabled = false; go.textContent = 'Check pallet';
-}
-$('#f-pack').onsubmit = e => { e.preventDefault(); packCheck(); };
-
+// ---- API triggers: what every trigger shares ------------------------------------------------
+// a copyable block; keys are unique on the page because each trigger prefixes its own
 const cmdBlock = (label, key, text) => `<div class="cmd"><div class="cmd-head"><span>${esc(label)}</span>
   <button type="button" class="btn small" data-pcopy="${key}">Copy</button></div><pre id="pc-${key}">${esc(text)}</pre></div>`;
-function packCommands(r) {
+function triggerCommands(r) {
   const url = `${r.outbox}/outbox/event-bus/publish/${r.event}`, body = JSON.stringify(r.payload);
   return {
     event: r.event,
@@ -221,50 +204,96 @@ function packCommands(r) {
     ps: `Invoke-RestMethod -Method Post -Uri "${url}" -ContentType "application/json" -Body '${body}'`,
   };
 }
-function packHtml(r, note) {
-  const t = r.task, p = r.pallet;
+const checkItem = i => `<li class="${i.level}"><span class="mark">${i.level === 'pass' ? '✓' : i.level === 'info' ? 'i' : '!'}</span><div>${esc(i.title)}${i.detail && i.level !== 'pass' ? `<small>${esc(i.detail)}</small>` : ''}</div></li>`;
+function triggerVerdict(r, note) {
   const nFail = r.items.filter(i => i.level === 'fail').length, nWarn = r.items.filter(i => i.level === 'warn').length;
-  const li = i => `<li class="${i.level}"><span class="mark">${i.level === 'pass' ? '✓' : '!'}</span><div>${esc(i.title)}${i.detail && i.level !== 'pass' ? `<small>${esc(i.detail)}</small>` : ''}</div></li>`;
-  const where = c => c.onPallet ? 'this pallet' : c.nowOn ? `${c.nowOn}${c.nowIn ? ' in ' + c.nowIn : ''}` : '';
-  const cartons = table([['Carton', 'carton', 'code'], ['Packed by', 'task', 'code'], ['Packed', c => !c.thisTask ? '' : c.packed ? 'Yes' : 'No'],
-    ['Staging row', c => c.staging ? c.staging : c.thisTask && c.packed ? 'None yet' : ''], ['Now on', where], ['Invoice', 'invoice', 'code'], ['GIN', c => c.gin || (c.invoice ? 'NO GIN' : '')]],
-    r.cartons, `Nothing was packed onto ${p.code} in session ${t.session}.`);
-  const others = r.onPallet.filter(c => c.session !== t.session || (c.task || '').toUpperCase() !== t.code.toUpperCase());
-  const C = r.outbox ? packCommands(r) : null;
-  let sendSec;
-  if (!r.ready) sendSec = `<p class="none-msg">Nothing to send: the event would answer 200 OK and then do nothing. Fix what’s marked above, or check again later.</p>`;
-  else if (!C) sendSec = `<div class="alert" style="margin:0">No wms-outbox address for ${esc(r.env)}. Add "outbox" to its entry in config/envs.json.</div>`;
-  else if (r.readOnly) sendSec = `<p class="ro-note">Read-only: this app never writes to ${esc(r.env)}. Send it yourself, once, from the office network or VPN. No login token is needed.</p>
+  return `<div class="verdict-big"><span class="light ${r.ready ? (nWarn ? 'yellow' : 'green') : 'red'}"></span>
+      <h3>${r.ready ? 'Ready to send' : 'Don’t send: the event would do nothing'}</h3>
+      ${nFail ? `<span class="pill bad">${nFail} blocking</span>` : ''}${nWarn ? ` <span class="pill warn">${nWarn} warning${nWarn > 1 ? 's' : ''}</span>` : ''}
+      <span class="hint">Read ${esc(new Date(r.checkedAt).toLocaleTimeString())}</span></div>${note}`;
+}
+// the "Send it" body: a button where the app may write, Swagger and curl to copy where it may not.
+// p prefixes the ids (p-send, p-res, p-event…); posts says what the button sends where.
+function sendSection(r, p, posts) {
+  const C = r.outbox ? triggerCommands(r) : null;
+  let s;
+  if (!r.ready) s = `<p class="none-msg">Nothing to send: the event would answer 200 OK and then do nothing. Fix what’s marked above, or check again later.</p>`;
+  else if (!C) s = `<div class="alert" style="margin:0">No wms-outbox address for ${esc(r.env)}. Add "outbox" to its entry in config/envs.json.</div>`;
+  else if (r.readOnly) s = `<p class="ro-note">Read-only: this app never writes to ${esc(r.env)}. Send it yourself, once, from the office network or VPN. No login token is needed.</p>
     <div class="send-opts">
       <div><h4 class="sec-h" style="margin:16px 0 0">Option A · Swagger</h4><ol>
         <li>Open <a href="${esc(r.outbox)}/docs" target="_blank" rel="noopener">wms-outbox /docs</a>.</li>
         <li>Under <b>default</b>, expand <b>POST /outbox/event-bus/publish/{event}</b> and click <b>Try it out</b>.</li>
         <li>Set <b>event</b> to the value below. Leave stringPayload and integerPayload empty.</li>
         <li>Replace the request body with the body below, then <b>Execute</b>. Success is <b>200</b> with body <b>OK</b>.</li></ol>
-        ${cmdBlock('event', 'event', C.event)}${cmdBlock('Request body', 'body', C.body)}</div>
+        ${cmdBlock('event', p + '-event', C.event)}${cmdBlock('Request body', p + '-body', C.body)}</div>
       <div><h4 class="sec-h" style="margin:16px 0 0">Option B · terminal</h4>
         <p class="hint" style="margin:8px 0 0">Prints <b>OK</b> on success. A 400 means the body was changed; a timeout means you’re off the VPN.</p>
-        ${cmdBlock('Git Bash, macOS, Linux', 'curl', C.curl)}${cmdBlock('Windows PowerShell', 'ps', C.ps)}</div>
+        ${cmdBlock('Git Bash, macOS, Linux', p + '-curl', C.curl)}${cmdBlock('Windows PowerShell', p + '-ps', C.ps)}</div>
     </div>`;
-  else sendSec = `<div class="send-row"><button type="button" class="btn primary big" id="k-send">Send ${esc(r.event)}</button>
-      <small>Posts {taskId, huId} to ${esc(r.outbox.replace(/^https?:\/\//, ''))}/outbox/event-bus/publish/${esc(r.event)}, then checks again.</small></div>
-    <details><summary>Or send it yourself</summary>${cmdBlock('Request body', 'body', C.body)}${cmdBlock('curl', 'curl', C.curl)}${cmdBlock('Windows PowerShell', 'ps', C.ps)}</details>`;
+  else s = `<div class="send-row"><button type="button" class="btn primary big" id="${p}-send">Send ${esc(r.event)}</button>
+      <small>Posts ${esc(posts)} to ${esc(r.outbox.replace(/^https?:\/\//, ''))}/outbox/event-bus/publish/${esc(r.event)}, then checks again.</small></div>
+    <details><summary>Or send it yourself</summary>${cmdBlock('Request body', p + '-body', C.body)}${cmdBlock('curl', p + '-curl', C.curl)}${cmdBlock('Windows PowerShell', p + '-ps', C.ps)}</details>`;
+  return s + `<div id="${p}-res"></div>`;
+}
+document.querySelector('main').addEventListener('click', async e => {
+  const c = e.target.closest('[data-pcopy]');
+  if (!c) return;
+  const text = $('#pc-' + c.dataset.pcopy)?.textContent || '';
+  try { await navigator.clipboard.writeText(text); c.textContent = 'Copied'; } catch { c.textContent = 'Copy failed'; }
+  setTimeout(() => { c.textContent = 'Copy'; }, 1500);
+});
+// sends a trigger from its Send button; render(after, note) redraws the feature with what changed
+async function sendTrigger(p, path, body, render, summary) {
+  const b = $(`#${p}-send`);
+  b.disabled = true; b.textContent = 'Sending…';
+  try {
+    const r = await api(path + '?' + new URLSearchParams({ whId: wh() }), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const note = r.sent ? summary(r)
+      : `<div class="alert" role="alert">${r.reason ? esc(r.reason) : `Not sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}`}</div>`;
+    render(r.after, note);
+  } catch (err) {
+    $(`#${p}-res`).innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`;
+    b.disabled = false; b.textContent = 'Send';
+  }
+}
+
+// ---- API triggers: pack pallet -> staging (lib/ops/pack-staging.js) ----------------------------
+{
+  const last = store.get('ops.pack');
+  if (last) { $('#k-task').value = last.task || ''; $('#k-pallet').value = last.pallet || ''; }
+}
+async function packCheck(note = '') {
+  const out = $('#pack-out');
+  if (needWh(out)) return;
+  const task = $('#k-task').value.trim(), pallet = $('#k-pallet').value.trim();
+  if (!task) { $('#k-task').focus(); return; }
+  if (!pallet) { $('#k-pallet').focus(); return; }
+  store.set('ops.pack', { task, pallet });
+  const go = $('#k-go'); go.disabled = true; go.textContent = 'Checking…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading the task, the pallet and its cartons…</div>';
+  try { out.innerHTML = packHtml(await api('/api/ops/pack-staging?' + new URLSearchParams({ whId: wh(), task, pallet })), note); }
+  catch (err) { out.innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`; }
+  go.disabled = false; go.textContent = 'Check pallet';
+}
+$('#f-pack').onsubmit = e => { e.preventDefault(); packCheck(); };
+function packHtml(r, note) {
+  const t = r.task, p = r.pallet;
+  const where = c => c.onPallet ? 'this pallet' : c.nowOn ? `${c.nowOn}${c.nowIn ? ' in ' + c.nowIn : ''}` : '';
+  const cartons = table([['Carton', 'carton', 'code'], ['Packed by', 'task', 'code'], ['Packed', c => !c.thisTask ? '' : c.packed ? 'Yes' : 'No'],
+    ['Staging row', c => c.staging ? c.staging : c.thisTask && c.packed ? 'None yet' : ''], ['Now on', where], ['Invoice', 'invoice', 'code'], ['GIN', c => c.gin || (c.invoice ? 'NO GIN' : '')]],
+    r.cartons, `Nothing was packed onto ${p.code} in session ${t.session}.`);
+  const others = r.onPallet.filter(c => c.session !== t.session || (c.task || '').toUpperCase() !== t.code.toUpperCase());
   return `<div class="panel" style="margin-top:16px">
-    <div class="panel-sec">
-      <div class="verdict-big"><span class="light ${r.ready ? (nWarn ? 'yellow' : 'green') : 'red'}"></span>
-        <h3>${r.ready ? 'Ready to send' : 'Don’t send: the event would do nothing'}</h3>
-        ${nFail ? `<span class="pill bad">${nFail} blocking</span>` : ''}${nWarn ? ` <span class="pill warn">${nWarn} warning${nWarn > 1 ? 's' : ''}</span>` : ''}
-        <span class="hint">Read ${esc(new Date(r.checkedAt).toLocaleTimeString())}</span></div>
-      ${note}
+    <div class="panel-sec">${triggerVerdict(r, note)}
       <div class="kv" style="margin-top:14px"><span>Task <span class="rl sm">${esc(t.code)}</span></span><span>Session <b>${esc(t.session)}</b></span>
         <span>Pallet <span class="rl sm">${esc(p.code)}</span></span><span>In <b>${esc(p.bin || 'no bin')}</b></span><span>Pick strategy <b>${esc(t.pickStrat || 'not set')}</b></span></div>
     </div>
-    <div class="panel-sec"><ul class="checklist">${r.items.map(li).join('')}</ul></div>
+    <div class="panel-sec"><ul class="checklist">${r.items.map(checkItem).join('')}</ul></div>
     <div class="panel-sec"><h3>Cartons packed onto ${esc(p.code)} in ${esc(t.session)}<small>${fmt(r.counts.toStage)} waiting for staging, ${fmt(r.counts.staged)} staged</small></h3>${cartons}
       ${others.length ? `<p class="hint">On the pallet now, packed by another task: ${others.map(c => `${esc(c.carton)} (${esc(c.task || 'unknown')})`).join(', ')}.</p>` : ''}
       ${r.stagingTasks.length ? `<p class="hint">Open staging tasks in ${esc(t.session)}: ${r.stagingTasks.map(x => `<b>${esc(x.code)}</b> ${esc(x.state)}`).join(', ')}. A worker moves the cartons from there to a STG-01-nn bin.</p>` : ''}</div>
-    <div class="panel-sec"><h3>Send it<small>once per pallet; a repeat finds everything staged and does nothing</small></h3>${sendSec}
-      <div id="k-res"></div></div>
+    <div class="panel-sec"><h3>Send it<small>once per pallet; a repeat finds everything staged and does nothing</small></h3>${sendSection(r, 'k', '{taskId, huId}')}</div>
     <div class="panel-sec"><h3>After sending</h3>
       <div class="send-row"><button type="button" class="btn" id="k-again">Check again</button>
         <small>Within a few seconds the cartons get staging rows. A staging task shows up once a staging worker is assigned, which can take minutes.</small></div>
@@ -273,29 +302,70 @@ function packHtml(r, note) {
         <li>If the GIN was already SENT or ACKED, the cartons move but the ERP doesn’t change. Report them to ops.</li></ul></div>
   </div>`;
 }
-$('#pack-out').addEventListener('click', async e => {
-  const c = e.target.closest('[data-pcopy]');
-  if (c) {
-    const text = $('#pc-' + c.dataset.pcopy)?.textContent || '';
-    try { await navigator.clipboard.writeText(text); c.textContent = 'Copied'; } catch { c.textContent = 'Copy failed'; }
-    setTimeout(() => { c.textContent = 'Copy'; }, 1500);
-    return;
-  }
+$('#pack-out').addEventListener('click', e => {
   if (e.target.closest('#k-again')) return packCheck();
-  const b = e.target.closest('#k-send');
-  if (!b) return;
-  b.disabled = true; b.textContent = 'Sending…';
-  try {
-    const r = await api('/api/ops/pack-staging/send?' + new URLSearchParams({ whId: wh() }), { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: $('#k-task').value.trim(), pallet: $('#k-pallet').value.trim() }) });
-    const a = r.after;
-    const note = r.sent
-      ? `<div class="callout${a.counts.toStage ? ' warn' : ''}" style="margin-top:14px">Sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}. ${a.counts.toStage
-          ? `${fmt(a.counts.toStage)} carton(s) still have no staging row. The queue may be slow: check again in a minute.` : `All ${fmt(a.counts.staged)} carton(s) now have staging rows.`}</div>`
-      : `<div class="alert" role="alert">${r.reason ? esc(r.reason) : `Not sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}`}</div>`;
-    PACK = a; $('#pack-out').innerHTML = packHtml(a, note);
-  } catch (err) {
-    $('#k-res').innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`;
-    b.disabled = false; b.textContent = 'Send ' + PACK.event;
-  }
+  if (!e.target.closest('#k-send')) return;
+  sendTrigger('k', '/api/ops/pack-staging/send', { task: $('#k-task').value.trim(), pallet: $('#k-pallet').value.trim() },
+    (a, note) => { $('#pack-out').innerHTML = packHtml(a, note); },
+    r => `<div class="callout${r.after.counts.toStage ? ' warn' : ''}" style="margin-top:14px">Sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}. ${r.after.counts.toStage
+      ? `${fmt(r.after.counts.toStage)} carton(s) still have no staging row. The queue may be slow: check again in a minute.` : `All ${fmt(r.after.counts.staged)} carton(s) now have staging rows.`}</div>`);
+});
+
+// ---- API triggers: re-run drop slotting (lib/ops/slotting-retrigger.js) -------------------------
+async function slotCheck(note = '') {
+  const out = $('#slot-out');
+  if (needWh(out)) return;
+  const go = $('#d-go'); go.disabled = true; go.textContent = 'Checking…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading every provisional row with no destination…</div>';
+  try { out.innerHTML = slotHtml(await api('/api/ops/slotting-retrigger?' + new URLSearchParams({ whId: wh() })), note); }
+  catch (err) { out.innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`; }
+  go.disabled = false; go.textContent = 'Check warehouse';
+}
+$('#d-go').onclick = () => slotCheck();
+const SLOT_WHY = {
+  retry: ['Would be retried', 'No destination zone yet, in a live session: the next run tries them again.'],
+  zoned: ['Waiting for the drop', 'Already have a destination zone. The bin is chosen when the pallet is dropped, so they aren’t stuck and a run leaves them alone.'],
+  unformed: ['Pallet not formed yet', 'No pick HU or formed carrier HU, so drop slotting skips them. Fix it at receiving or pallet formation instead.'],
+  ended: ['In finished sessions', 'The session is COMPLETED or CANCELLED, so a run skips them. They are left-over rows; where the pallet is now tells you whether it was put away anyway.'],
+};
+function slotHtml(r, note) {
+  const where = x => x.nowIn ? `${x.nowIn}${x.atSource ? ' (still at source)' : ''}` : '';
+  const eligible = table([['Session', 'session', 'code'], ['Kind', 'kind'], ['State', 'state'], ['Task kind', 'taskKind'], ['Rows', x => fmt(x.rows), 'num'],
+    ['Pallets', x => x.pallets || '—', 'code'], ['Last failure', 'reasons'], ['Since', 'since']], r.eligible, 'Nothing for a run to retry.');
+  const groups = ['retry', 'zoned', 'unformed', 'ended'].map(w => {
+    let rows = r.putaway.filter(x => x.why === w);
+    if (!rows.length) return '';
+    // finished sessions: the "Destination Bin Not Found" ones, and a count of the rest
+    const quiet = w === 'ended' ? rows.filter(x => !x.reason).length : 0;
+    if (w === 'ended') rows = rows.filter(x => x.reason);
+    const [title, why] = SLOT_WHY[w];
+    return `<details class="sec-d"${w === 'retry' ? ' open' : ''}><summary><b>${esc(title)}</b> · ${fmt(rows.length + quiet)} pallet${rows.length + quiet > 1 ? 's' : ''}</summary>
+      <p class="hint" style="margin:6px 0 10px">${esc(why)}</p>
+      ${rows.length ? table([['Session', 'session', 'code'], ['Pallet', 'pallet', 'code'], ['Rows', x => fmt(x.rows), 'num'], ['Now in', where, 'bin'],
+        ['Stock on it', x => x.stock ? 'Yes' : 'No'], ['Failure', 'reason'], ['Since', 'since']], rows, '') : ''}
+      ${quiet ? `<p class="hint">${rows.length ? 'Plus ' : ''}${fmt(quiet)} more without a failure reason${rows.length ? '' : ' (none failed with "Destination Bin Not Found")'}.</p>` : ''}</details>`;
+  }).join('');
+  return `<div class="panel" style="margin-top:16px">
+    <div class="panel-sec">${triggerVerdict(r, note)}
+      <div class="kv" style="margin-top:14px"><span>Rows a run would retry <b>${fmt(r.counts.retry)}</b></span><span>Putaway pallets among them <b>${fmt(r.counts.putawayRetry)}</b></span>
+        <span>Putaway pallets waiting for the drop <b>${fmt(r.counts.zoned)}</b></span></div></div>
+    <div class="panel-sec"><ul class="checklist">${r.items.map(checkItem).join('')}</ul></div>
+    <div class="panel-sec"><h3>What a run would retry<small>every task kind: the event covers the whole warehouse</small></h3>${eligible}</div>
+    <div class="panel-sec"><h3>Inbound putaway pallets with no destination bin<small>and why a run would or wouldn’t touch them</small></h3>${groups || '<p class="none-msg">None.</p>'}</div>
+    <div class="panel-sec"><h3>Send it<small>a repeat is harmless: a run that finds nothing to do does nothing</small></h3>${sendSection(r, 'd', '{whId}')}</div>
+    <div class="panel-sec"><h3>After sending</h3>
+      <div class="send-row"><button type="button" class="btn" id="d-again">Check again</button>
+        <small>Rows that got a bin leave the “would retry” list. Rows that failed again get “Destination Bin Not Found”.</small></div>
+      <ul class="side-notes" style="margin-top:14px">
+        <li>A row that failed with “Destination Bin Not Found” fails again unless a bin has freed up or the putaway bin search strategy changed since. Check Why putaway says no for the SKU first.</li>
+        <li>If another slotting run is already going, this one is dropped as a duplicate. Check again in a minute and resend if nothing changed.</li></ul></div>
+  </div>`;
+}
+$('#slot-out').addEventListener('click', e => {
+  if (e.target.closest('#d-again')) return slotCheck();
+  if (!e.target.closest('#d-send')) return;
+  sendTrigger('d', '/api/ops/slotting-retrigger/send', {}, (a, note) => { $('#slot-out').innerHTML = slotHtml(a, note); },
+    r => `<div class="callout${r.after.counts.retry ? ' warn' : ''}" style="margin-top:14px">Sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}. ${
+      r.after.counts.retry ? `${fmt(r.after.counts.retry)} of ${fmt(r.before.retry)} row(s) are still waiting: they found no bin again, or the run is still going. Check again in a minute.`
+        : `All ${fmt(r.before.retry)} row(s) were slotted.`}</div>`);
 });

@@ -63,7 +63,7 @@ remembered per module.
 | Module (route) | Tab | Features |
 |---|---|---|
 | Operations (`/ops`) | Go-live · Putaway · Stock health | Readiness · Why putaway says no · Stuck stock |
-| | API triggers | Pack → staging (ISS-1701: check a pack pallet, then send `ob-pack.hu.completed`) |
+| | API triggers | Pack → staging (ISS-1701: check a pack pallet, then send `ob-pack.hu.completed`) · Putaway slotting (re-run `pick-drop-provisional.drop.slotting.v2` for "Destination Bin Not Found") |
 | Acks (`/`) | Inbound · Outbound | GRN ack · GIN ack |
 | Inventory (`/inventory`) | Build sheets | Test case · Bulk fill |
 | | Check | Check a sheet · Verify an upload |

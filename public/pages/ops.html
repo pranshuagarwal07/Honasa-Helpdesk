@@ -70,6 +70,9 @@ td.none { color: var(--faint); }
 .send-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
 .send-row small { color: var(--mut); font-size: 12.5px; overflow-wrap: anywhere; }
 .res-line { margin-top: 14px; font-size: 14px; }
+details.sec-d { margin: 0; padding: 12px 0; border-top: 1px solid var(--line); font-size: 14px; }
+details.sec-d:first-of-type { border-top: 0; padding-top: 0; }
+details.sec-d > summary { cursor: pointer; }
 .side-notes { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--mut); line-height: 1.6; }
 @media (max-width: 640px) {
   #f-pack .ops-form { grid-template-columns: minmax(0, 1fr); }
@@ -144,6 +147,15 @@ td.none { color: var(--faint); }
       <p class="hint" style="margin:12px 0 0">Checks what the event reads before it acts: the task, session, pick strategy, where the pallet is, and which cartons still need a staging row. Read-only.</p>
     </div></form>
     <div id="pack-out"></div>
+  </section>
+
+  <!-- API triggers: re-run drop slotting ------------------------------------------------- -->
+  <section id="v-slot" hidden>
+    <div class="panel"><div class="panel-sec" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <button type="button" class="btn primary" id="d-go">Check warehouse</button>
+      <p class="hint" style="margin:0;flex:1 1 300px">Lists every provisional row a run would retry, across all task kinds, and every inbound putaway pallet with no destination bin with the reason a run would or wouldn’t touch it. Read-only.</p>
+    </div></div>
+    <div id="slot-out"></div>
   </section>
 </main>
 </div>
