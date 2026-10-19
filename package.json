@@ -1,5 +1,5 @@
 {
-  "name": "honasa-ack",
+  "name": "honasa-helpdesk",
   "private": true,
   "description": "UAT desk: GRN/GIN acks, inventory sheets, master checks, operations reports and config comparison for Honasa",
   "main": "server.js",

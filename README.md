@@ -1,8 +1,8 @@
-# UAT desk
+# Honasa Helpdesk
 
-A local web app for Honasa UAT work: GRN/GIN acks, inventory sheets (test cases, bulk fill,
-checking, verifying, consolidation), master sheet checks, operations reports and config
-comparison between warehouses.
+Local helpdesk toolkit for StackBox WMS on Honasa (UAT and PROD): GRN/GIN acks, inventory sheets
+(test cases, bulk fill, checking, verifying, consolidation), master sheet checks, IM upload plans,
+operations reports, config comparison between warehouses and debugging scripts.
 
 ## Run it
 
