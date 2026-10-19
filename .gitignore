@@ -7,3 +7,6 @@ _archive/
 
 # client data snapshots (PROD) - never commit
 tests/fixtures/prod-*.json
+
+# Claude Code worktrees and local settings
+.claude/

@@ -4,6 +4,42 @@ Local helpdesk toolkit for StackBox WMS on Honasa (UAT and PROD): GRN/GIN acks, 
 (test cases, bulk fill, checking, verifying, consolidation), master sheet checks, IM upload plans,
 operations reports, config comparison between warehouses and debugging scripts.
 
+## Before you start: add your credentials
+
+The app ships **without any credentials**. `config/envs.json` holds the database connections and is
+kept out of git (see `.gitignore`), so a fresh clone won't start until you create it.
+
+1. Install **Node 18 or later** and connect to the **StackBox VPN** (the databases and WMS services
+   are only reachable over it).
+2. Copy the example file:
+   ```
+   copy config\envs.example.json config\envs.json
+   ```
+3. Fill in `config/envs.json` for each environment you'll use (`SBX_HONASA_UAT`, `SBX_HONASA_PROD`):
+
+   | Field | What to put |
+   |---|---|
+   | `host`, `port` | The environment's read-only Postgres host and port |
+   | `user`, `password` | A **read-only** database user. The server refuses to start without a password |
+   | `databases` | Database names: `wms` (usually `postgres`), `encarta`, `backbone` |
+   | `cincout` | UAT only: the internal wms-cincout URL used to push GRN/GIN acks. Leave it out for PROD |
+   | `readOnly` | `true` for PROD. Ack pushes are switched off and the sidebar turns red |
+   | `defaultWhId`, `appPort` | Optional: the warehouse id preselected in the UI, and the port (8765 UAT, 8766 PROD) |
+
+   Get the read-only connection details from Trinetra (`get_db_urls` / `list_urls` for the
+   environment) or from your team lead. Use only the **read-only** user: this app never needs write
+   access to the databases.
+4. Start it with `run.bat` (UAT) or `run-prod.bat` (PROD).
+   - If `config/envs.json` doesn't exist, the server stops straight away with a "no such file"
+     (`ENOENT`) error. Go back to step 2.
+   - If the environment's entry or password is missing, it stops with a message saying what to add,
+     e.g. `Add the read-only database password for SBX_HONASA_UAT to config/envs.json`.
+
+   The Compare page can also use any other environment you add to the same file.
+
+**Never commit or share `config/envs.json`** (or the old copy under `_archive/`). It contains
+passwords. Check `git status` before every commit; `config/envs.json` must never appear there.
+
 ## Run it
 
 | | Starts | Port | Writes to the WMS |
@@ -14,8 +50,8 @@ operations reports, config comparison between warehouses and debugging scripts.
 Each script restarts its server if it's already running, so run it again after changing code.
 Pages and styles are read on every request, so edits under `public/` only need a browser refresh.
 
-Needs Node 18 or later, the StackBox VPN, and `config/envs.json` (copy `config/envs.example.json`
-and fill in the read-only database user and password).
+Needs Node 18 or later, the StackBox VPN, and `config/envs.json` with your credentials. See
+[Before you start](#before-you-start-add-your-credentials).
 
 ## Folders
 
