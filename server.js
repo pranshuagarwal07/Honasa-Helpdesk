@@ -30,6 +30,10 @@ const URLS = READ_ONLY ? {} : {
   GRN: CFG.cincout + "/internal/integration/inbound/grn-ack",
   GIN: CFG.cincout + "/internal/integration/outbound/gin-ack",
 };
+// wms-outbox, for API triggers: the env's "outbox", else next to cincout. PROD has no cincout here (read-only),
+// so its address is known up front; the app only shows it there, for Swagger and curl.
+const OUTBOX = (CFG.outbox || (CFG.cincout ? CFG.cincout.replace("wms-cincout", "wms-outbox") :
+  { SBX_HONASA_PROD: "https://wms-outbox.sbx-honasa-prod.api.prod.internal.stackbox.xyz" }[ENV]) || "").replace(/\/+$/, "");
 const PORT = Number(process.env.PORT) || CFG.appPort || 8765;
 const LABEL = ENV.replace(/^SBX_HONASA_/, ""); // "UAT", "PROD"
 const RUN_BAT = ENV === "SBX_HONASA_UAT" ? "run.bat" : `run-${LABEL.toLowerCase()}.bat`;
@@ -39,7 +43,7 @@ const encarta = makePool(DB_HOST, CFG.databases?.encarta || "encarta");
 
 // ---- http -------------------------------------------------------------------
 // read per request so page edits show up on refresh without a restart
-const RAIL_FOOT = "Pushing an ack writes to the WMS. Building, checking and verifying sheets never do.";
+const RAIL_FOOT = "Pushing an ack or sending an API trigger writes to the WMS. Building, checking and verifying sheets never do.";
 // the sidebar is one file for every page and lists the modules; nav marks the page's module, and the page
 // learns it as DESK.module (one page file can serve two modules: inventory.html is Inventory and Masters)
 const page = (file, nav) => {
@@ -50,7 +54,7 @@ const page = (file, nav) => {
     .replaceAll("__MODULE__", nav || "").replaceAll("__ENV__", ENV).replaceAll("__WH__", DEFAULT_WH_ID)
     .replaceAll("__LABEL__", LABEL).replaceAll("run.bat", RUN_BAT);
   return !READ_ONLY ? html : html.replace("<body>", '<body class="read-only">')
-    .replace(RAIL_FOOT, `Read-only: this app never writes to ${ENV}. Ack pushes are switched off here.`);
+    .replace(RAIL_FOOT, `Read-only: this app never writes to ${ENV}. Ack pushes and API triggers are switched off here.`);
 };
 // one route per module; the tab and feature inside a module live in the #tab/feature of the address (js/tabs.js)
 const PAGES = { "/": ["acks.html", "acks"], "/ops": ["ops.html", "ops"], "/inventory": ["inventory.html", "inventory"],
@@ -90,7 +94,7 @@ const compare = require("./lib/compare")({
 });
 
 const acks = require("./lib/acks")({ wms, encarta, q, tryQ, URLS, READ_ONLY, ENV });
-const ops = require("./lib/ops")({ wms, encarta, q, tryQ, inventory, masters, compare, ENV });
+const ops = require("./lib/ops")({ wms, encarta, q, tryQ, inventory, masters, compare, ENV, READ_ONLY, OUTBOX });
 
 // Only this app's own pages may use it. Listening on 127.0.0.1 isn't enough: any web page
 // open in the browser can POST to localhost (and could push an ack), and DNS rebinding can

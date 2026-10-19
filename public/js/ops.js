@@ -1,4 +1,4 @@
-// Operations: go-live readiness, why putaway says no, stuck stock.
+// Operations: go-live readiness, why putaway says no, stuck stock, API triggers.
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const fmt = n => Number(n || 0).toLocaleString();
@@ -27,7 +27,10 @@ Tabs.init({name: 'Operations', tabs: [
       lede: 'Give a SKU, batch, UOM and quantity. See every bin putaway can use, in the order it would try them, and for every other bin the rule that rejects it.'}]},
   {id: 'health', label: 'Stock health', features: [
     {id: 'stuck', label: 'Stuck stock', view: '#v-stuck',
-      lede: 'Stock and pallets the WMS still treats as busy, and the sessions holding up the inventory upload.'}]}],
+      lede: 'Stock and pallets the WMS still treats as busy, and the sessions holding up the inventory upload.'}]},
+  {id: 'api', label: 'API triggers', features: [
+    {id: 'pack-staging', label: 'Pack → staging', view: '#v-pack', title: 'Pack pallet to staging',
+      lede: 'Cartons are packed on a pallet at a pack station but no move-to-staging task appears. Check the pallet, then send the event the device’s Move to Next Task would have sent.'}]}],
   // the old one-level #mode links
   legacy: {ready: 'golive/ready', putaway: 'putaway/explain', stuck: 'health/stuck'}});
 
@@ -184,3 +187,115 @@ function stuckHtml(r) {
     ${empty.length ? `<div class="panel-sec"><p class="clear-list">Nothing found: ${empty.map(x => `<b>${esc(x)}</b>`).join(' · ')}</p></div>` : ''}
   </div>`;
 }
+
+// ---- API triggers: pack pallet -> staging (lib/ops/pack-staging.js) ----------------------------
+{
+  const last = store.get('ops.pack');
+  if (last) { $('#k-task').value = last.task || ''; $('#k-pallet').value = last.pallet || ''; }
+}
+let PACK = null;   // the last check: the send button's label comes from it
+async function packCheck(note = '') {
+  const out = $('#pack-out');
+  if (needWh(out)) return;
+  const task = $('#k-task').value.trim(), pallet = $('#k-pallet').value.trim();
+  if (!task) { $('#k-task').focus(); return; }
+  if (!pallet) { $('#k-pallet').focus(); return; }
+  store.set('ops.pack', { task, pallet });
+  const go = $('#k-go'); go.disabled = true; go.textContent = 'Checking…';
+  out.innerHTML = '<div class="loading" style="margin-top:16px">Reading the task, the pallet and its cartons…</div>';
+  try { PACK = await api('/api/ops/pack-staging?' + new URLSearchParams({ whId: wh(), task, pallet })); out.innerHTML = packHtml(PACK, note); }
+  catch (err) { out.innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`; }
+  go.disabled = false; go.textContent = 'Check pallet';
+}
+$('#f-pack').onsubmit = e => { e.preventDefault(); packCheck(); };
+
+const cmdBlock = (label, key, text) => `<div class="cmd"><div class="cmd-head"><span>${esc(label)}</span>
+  <button type="button" class="btn small" data-pcopy="${key}">Copy</button></div><pre id="pc-${key}">${esc(text)}</pre></div>`;
+function packCommands(r) {
+  const url = `${r.outbox}/outbox/event-bus/publish/${r.event}`, body = JSON.stringify(r.payload);
+  return {
+    event: r.event,
+    body: JSON.stringify(r.payload, null, 2),
+    curl: `curl -X POST '${url}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${body}'`,
+    // Windows PowerShell 5.1 strips the quotes inside a JSON argument to curl.exe; Invoke-RestMethod doesn't
+    ps: `Invoke-RestMethod -Method Post -Uri "${url}" -ContentType "application/json" -Body '${body}'`,
+  };
+}
+function packHtml(r, note) {
+  const t = r.task, p = r.pallet;
+  const nFail = r.items.filter(i => i.level === 'fail').length, nWarn = r.items.filter(i => i.level === 'warn').length;
+  const li = i => `<li class="${i.level}"><span class="mark">${i.level === 'pass' ? '✓' : '!'}</span><div>${esc(i.title)}${i.detail && i.level !== 'pass' ? `<small>${esc(i.detail)}</small>` : ''}</div></li>`;
+  const where = c => c.onPallet ? 'this pallet' : c.nowOn ? `${c.nowOn}${c.nowIn ? ' in ' + c.nowIn : ''}` : '';
+  const cartons = table([['Carton', 'carton', 'code'], ['Packed by', 'task', 'code'], ['Packed', c => !c.thisTask ? '' : c.packed ? 'Yes' : 'No'],
+    ['Staging row', c => c.staging ? c.staging : c.thisTask && c.packed ? 'None yet' : ''], ['Now on', where], ['Invoice', 'invoice', 'code'], ['GIN', c => c.gin || (c.invoice ? 'NO GIN' : '')]],
+    r.cartons, `Nothing was packed onto ${p.code} in session ${t.session}.`);
+  const others = r.onPallet.filter(c => c.session !== t.session || (c.task || '').toUpperCase() !== t.code.toUpperCase());
+  const C = r.outbox ? packCommands(r) : null;
+  let sendSec;
+  if (!r.ready) sendSec = `<p class="none-msg">Nothing to send: the event would answer 200 OK and then do nothing. Fix what’s marked above, or check again later.</p>`;
+  else if (!C) sendSec = `<div class="alert" style="margin:0">No wms-outbox address for ${esc(r.env)}. Add "outbox" to its entry in config/envs.json.</div>`;
+  else if (r.readOnly) sendSec = `<p class="ro-note">Read-only: this app never writes to ${esc(r.env)}. Send it yourself, once, from the office network or VPN. No login token is needed.</p>
+    <div class="send-opts">
+      <div><h4 class="sec-h" style="margin:16px 0 0">Option A · Swagger</h4><ol>
+        <li>Open <a href="${esc(r.outbox)}/docs" target="_blank" rel="noopener">wms-outbox /docs</a>.</li>
+        <li>Under <b>default</b>, expand <b>POST /outbox/event-bus/publish/{event}</b> and click <b>Try it out</b>.</li>
+        <li>Set <b>event</b> to the value below. Leave stringPayload and integerPayload empty.</li>
+        <li>Replace the request body with the body below, then <b>Execute</b>. Success is <b>200</b> with body <b>OK</b>.</li></ol>
+        ${cmdBlock('event', 'event', C.event)}${cmdBlock('Request body', 'body', C.body)}</div>
+      <div><h4 class="sec-h" style="margin:16px 0 0">Option B · terminal</h4>
+        <p class="hint" style="margin:8px 0 0">Prints <b>OK</b> on success. A 400 means the body was changed; a timeout means you’re off the VPN.</p>
+        ${cmdBlock('Git Bash, macOS, Linux', 'curl', C.curl)}${cmdBlock('Windows PowerShell', 'ps', C.ps)}</div>
+    </div>`;
+  else sendSec = `<div class="send-row"><button type="button" class="btn primary big" id="k-send">Send ${esc(r.event)}</button>
+      <small>Posts {taskId, huId} to ${esc(r.outbox.replace(/^https?:\/\//, ''))}/outbox/event-bus/publish/${esc(r.event)}, then checks again.</small></div>
+    <details><summary>Or send it yourself</summary>${cmdBlock('Request body', 'body', C.body)}${cmdBlock('curl', 'curl', C.curl)}${cmdBlock('Windows PowerShell', 'ps', C.ps)}</details>`;
+  return `<div class="panel" style="margin-top:16px">
+    <div class="panel-sec">
+      <div class="verdict-big"><span class="light ${r.ready ? (nWarn ? 'yellow' : 'green') : 'red'}"></span>
+        <h3>${r.ready ? 'Ready to send' : 'Don’t send: the event would do nothing'}</h3>
+        ${nFail ? `<span class="pill bad">${nFail} blocking</span>` : ''}${nWarn ? ` <span class="pill warn">${nWarn} warning${nWarn > 1 ? 's' : ''}</span>` : ''}
+        <span class="hint">Read ${esc(new Date(r.checkedAt).toLocaleTimeString())}</span></div>
+      ${note}
+      <div class="kv" style="margin-top:14px"><span>Task <span class="rl sm">${esc(t.code)}</span></span><span>Session <b>${esc(t.session)}</b></span>
+        <span>Pallet <span class="rl sm">${esc(p.code)}</span></span><span>In <b>${esc(p.bin || 'no bin')}</b></span><span>Pick strategy <b>${esc(t.pickStrat || 'not set')}</b></span></div>
+    </div>
+    <div class="panel-sec"><ul class="checklist">${r.items.map(li).join('')}</ul></div>
+    <div class="panel-sec"><h3>Cartons packed onto ${esc(p.code)} in ${esc(t.session)}<small>${fmt(r.counts.toStage)} waiting for staging, ${fmt(r.counts.staged)} staged</small></h3>${cartons}
+      ${others.length ? `<p class="hint">On the pallet now, packed by another task: ${others.map(c => `${esc(c.carton)} (${esc(c.task || 'unknown')})`).join(', ')}.</p>` : ''}
+      ${r.stagingTasks.length ? `<p class="hint">Open staging tasks in ${esc(t.session)}: ${r.stagingTasks.map(x => `<b>${esc(x.code)}</b> ${esc(x.state)}`).join(', ')}. A worker moves the cartons from there to a STG-01-nn bin.</p>` : ''}</div>
+    <div class="panel-sec"><h3>Send it<small>once per pallet; a repeat finds everything staged and does nothing</small></h3>${sendSec}
+      <div id="k-res"></div></div>
+    <div class="panel-sec"><h3>After sending</h3>
+      <div class="send-row"><button type="button" class="btn" id="k-again">Check again</button>
+        <small>Within a few seconds the cartons get staging rows. A staging task shows up once a staging worker is assigned, which can take minutes.</small></div>
+      <ul class="side-notes" style="margin-top:14px">
+        <li>The trigger doesn’t close the worker’s open pallet. It can’t go on another pack task until that worker presses Move to Next Task or the pack task completes.</li>
+        <li>If the GIN was already SENT or ACKED, the cartons move but the ERP doesn’t change. Report them to ops.</li></ul></div>
+  </div>`;
+}
+$('#pack-out').addEventListener('click', async e => {
+  const c = e.target.closest('[data-pcopy]');
+  if (c) {
+    const text = $('#pc-' + c.dataset.pcopy)?.textContent || '';
+    try { await navigator.clipboard.writeText(text); c.textContent = 'Copied'; } catch { c.textContent = 'Copy failed'; }
+    setTimeout(() => { c.textContent = 'Copy'; }, 1500);
+    return;
+  }
+  if (e.target.closest('#k-again')) return packCheck();
+  const b = e.target.closest('#k-send');
+  if (!b) return;
+  b.disabled = true; b.textContent = 'Sending…';
+  try {
+    const r = await api('/api/ops/pack-staging/send?' + new URLSearchParams({ whId: wh() }), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: $('#k-task').value.trim(), pallet: $('#k-pallet').value.trim() }) });
+    const a = r.after;
+    const note = r.sent
+      ? `<div class="callout${a.counts.toStage ? ' warn' : ''}" style="margin-top:14px">Sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}. ${a.counts.toStage
+          ? `${fmt(a.counts.toStage)} carton(s) still have no staging row. The queue may be slow: check again in a minute.` : `All ${fmt(a.counts.staged)} carton(s) now have staging rows.`}</div>`
+      : `<div class="alert" role="alert">${r.reason ? esc(r.reason) : `Not sent: wms-outbox answered ${esc(r.status)} ${esc(r.body)}`}</div>`;
+    PACK = a; $('#pack-out').innerHTML = packHtml(a, note);
+  } catch (err) {
+    $('#k-res').innerHTML = `<div class="alert" role="alert">${esc(err.message)}</div>`;
+    b.disabled = false; b.textContent = 'Send ' + PACK.event;
+  }
+});

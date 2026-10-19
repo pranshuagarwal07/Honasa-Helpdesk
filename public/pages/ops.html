@@ -56,7 +56,23 @@ td.none { color: var(--faint); }
 .counts .hot dd { color: var(--bad); }
 .clear-list { margin: 0; color: var(--mut); font-size: 13.5px; }
 .clear-list b { color: var(--ink); font-weight: 500; }
+/* API triggers: copyable commands, one block each */
+#f-pack .ops-form { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto; }
+.device-first { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-bottom: 16px; }
+.device-first b { color: var(--ink); }
+.cmd { margin-top: 14px; }
+.cmd-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 13px; font-weight: 500; }
+.cmd pre { margin: 0; padding: 12px 14px; overflow-x: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-sm);
+  font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.send-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 28px; }
+.send-opts ol { margin: 8px 0 0; padding-left: 20px; font-size: 13.5px; color: var(--mut); line-height: 1.6; }
+.send-opts ol b { color: var(--ink); font-weight: 600; }
+.send-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.send-row small { color: var(--mut); font-size: 12.5px; overflow-wrap: anywhere; }
+.res-line { margin-top: 14px; font-size: 14px; }
+.side-notes { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--mut); line-height: 1.6; }
 @media (max-width: 640px) {
+  #f-pack .ops-form { grid-template-columns: minmax(0, 1fr); }
   .ops-form .go .btn { flex: 1; min-height: 44px; }
   .rule-group h4 { grid-template-columns: 56px minmax(0, 1fr); gap: 10px; }
   .rule-group ul, .rule-group .sample { margin-left: 66px; }
@@ -114,6 +130,20 @@ td.none { color: var(--faint); }
       <p class="hint" style="margin:0;flex:1 1 300px">Stock locked by a finished, cancelled or missing task, empty pallets taking positions, stock in inactive bins, negative quantities, and open sessions that block the inventory upload.</p>
     </div></div>
     <div id="stuck-out"></div>
+  </section>
+  <!-- API triggers: pack pallet -> staging ------------------------------------------- -->
+  <section id="v-pack" hidden>
+    <form class="panel" id="f-pack"><div class="panel-sec">
+      <div class="device-first callout warn"><b>Try the device first.</b>
+        <span>The worker who opened the pallet logs in, goes to pack task → Packed CHUs → taps the pallet → <b>Move to Next Task</b>. Use this only when that isn't possible, or the cartons went on a pallet that was never the task's active pallet.</span></div>
+      <div class="ops-form">
+        <label class="field"><span>Pack task code</span><input type="text" id="k-task" spellcheck="false" autocomplete="off" placeholder="e.g. OUTBOUND-97-4"></label>
+        <label class="field"><span>Pallet code</span><input type="text" id="k-pallet" spellcheck="false" autocomplete="off" placeholder="e.g. PBL0309"></label>
+        <div class="go"><button type="submit" class="btn primary" id="k-go">Check pallet</button></div>
+      </div>
+      <p class="hint" style="margin:12px 0 0">Checks what the event reads before it acts: the task, session, pick strategy, where the pallet is, and which cartons still need a staging row. Read-only.</p>
+    </div></form>
+    <div id="pack-out"></div>
   </section>
 </main>
 </div>

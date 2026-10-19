@@ -23,7 +23,8 @@ kept out of git (see `.gitignore`), so a fresh clone won't start until you creat
    | `user`, `password` | A **read-only** database user. The server refuses to start without a password |
    | `databases` | Database names: `wms` (usually `postgres`), `encarta`, `backbone` |
    | `cincout` | UAT only: the internal wms-cincout URL used to push GRN/GIN acks. Leave it out for PROD |
-   | `readOnly` | `true` for PROD. Ack pushes are switched off and the sidebar turns red |
+   | `readOnly` | `true` for PROD. Ack pushes and API triggers are switched off and the sidebar turns red |
+   | `outbox` | Optional: the wms-outbox URL for API triggers. Defaults to the `cincout` URL with `wms-cincout` changed to `wms-outbox`; PROD's is built in, and there the app only shows the Swagger body and curl command |
    | `defaultWhId`, `appPort` | Optional: the warehouse id preselected in the UI, and the port (8765 UAT, 8766 PROD) |
 
    Get the read-only connection details from Trinetra (`get_db_urls` / `list_urls` for the
@@ -62,6 +63,7 @@ remembered per module.
 | Module (route) | Tab | Features |
 |---|---|---|
 | Operations (`/ops`) | Go-live · Putaway · Stock health | Readiness · Why putaway says no · Stuck stock |
+| | API triggers | Pack → staging (ISS-1701: check a pack pallet, then send `ob-pack.hu.completed`) |
 | Acks (`/`) | Inbound · Outbound | GRN ack · GIN ack |
 | Inventory (`/inventory`) | Build sheets | Test case · Bulk fill |
 | | Check | Check a sheet · Verify an upload |
