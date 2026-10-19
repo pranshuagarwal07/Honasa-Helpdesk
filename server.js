@@ -1,4 +1,4 @@
-// UAT desk server: loads the environment's config, opens the database pools, serves the pages
+// Honasa Helpdesk server: loads the environment's config, opens the database pools, serves the pages
 // in public/ and hands every /api/... request to the feature modules in lib/.
 //
 // Run:  run.bat       -> SBX_HONASA_UAT  on http://localhost:8765
@@ -48,7 +48,7 @@ const page = (file, nav) => {
   if (nav) rail = rail.replace(`data-nav="${nav}"`, `data-nav="${nav}" aria-current="page"`);
   const html = fs.readFileSync(path.join(PUBLIC, "pages", file), "utf8").replace("<!--#rail-->", () => rail)
     .replaceAll("__MODULE__", nav || "").replaceAll("__ENV__", ENV).replaceAll("__WH__", DEFAULT_WH_ID)
-    .replaceAll("UAT desk", `${LABEL} desk`).replaceAll("run.bat", RUN_BAT);
+    .replaceAll("__LABEL__", LABEL).replaceAll("run.bat", RUN_BAT);
   return !READ_ONLY ? html : html.replace("<body>", '<body class="read-only">')
     .replace(RAIL_FOOT, `Read-only: this app never writes to ${ENV}. Ack pushes are switched off here.`);
 };
@@ -116,4 +116,4 @@ http.createServer(async (req, res) => {
   } catch (e) {
     send(res, 500, { error: e.message });
   }
-}).listen(PORT, "127.0.0.1", () => console.log(`Honasa ${LABEL} desk on http://localhost:${PORT}  (${ENV}${READ_ONLY ? ", read-only" : ""})`));
+}).listen(PORT, "127.0.0.1", () => console.log(`Honasa Helpdesk (${LABEL}) on http://localhost:${PORT}  (${ENV}${READ_ONLY ? ", read-only" : ""})`));

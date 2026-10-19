@@ -1,7 +1,7 @@
 {
   "name": "honasa-helpdesk",
   "private": true,
-  "description": "UAT desk: GRN/GIN acks, inventory sheets, master checks, operations reports and config comparison for Honasa",
+  "description": "Honasa Helpdesk: GRN/GIN acks, inventory sheets, master checks, operations reports and config comparison for Honasa",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
