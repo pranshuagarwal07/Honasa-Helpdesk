@@ -159,78 +159,66 @@
   </section>
 
   <!-- consolidate ------------------------------------------------------------ -->
-  <section id="v-consolidate" class="narrow" hidden>
-    <div class="seg" role="radiogroup" aria-label="What to consolidate" style="margin-bottom:12px">
-      <input type="radio" name="cs-kind" id="csk-e" value="eaches" checked><label for="csk-e">Shelf bins (eaches, cases)</label>
-      <input type="radio" name="cs-kind" id="csk-p" value="pallets"><label for="csk-p">Pallets</label>
-      <input type="radio" name="cs-kind" id="csk-r" value="relocate"><label for="csk-r">Bins under % full</label></div>
-
-    <div id="cs-eaches">
-      <div class="panel">
-        <div class="panel-sec">
-          <div class="act-head"><h3>Where to merge<small id="ce-count">Loading areas…</small></h3>
-            <button type="button" class="link" id="ce-reload">Reload areas</button></div>
-          <div id="ce-scope" class="ce-scope"></div>
-          <p class="hint" style="margin:8px 0 0">Stock is only poured between bins of the areas and zones ticked here. Shelf bins only.</p>
-        </div>
-        <div class="panel-sec">
-          <div class="act-head"><h3>Bin types<small id="ce-bt-count"></small></h3></div>
-          <div id="ce-types" class="ce-types"></div>
-          <p class="hint" style="margin:8px 0 0">Only bins of the ticked types give or take stock, so a pour can go between two ticked types.</p>
-        </div>
-        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
-          <fieldset class="ce-units"><legend>Move</legend>
-            <label class="bf-check"><input type="checkbox" id="ce-u-l0" checked> Eaches (L0)</label>
-            <label class="bf-check"><input type="checkbox" id="ce-u-l2"> Cases (L2), whole</label></fieldset>
-          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="ce-below" value="100" min="5" max="100" step="5"
-            title="A bin at or above this fill (of its own volume) is never emptied, but can still take stock. 100 = any bin."></label>
-          <label class="field" style="max-width:200px"><span>Fill bins up to (% of volume)</span><input type="number" id="ce-fill" value="100" min="10" max="100" step="5"></label>
-          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="ce-cross"> Pour between zones of the same area</label>
-          <label class="bf-check" style="padding-bottom:8px" title="WMS putaway only checks volume. Many shelf bins already hold more than their max kg."><input type="checkbox" id="ce-kg" checked> Keep bins within their max kg</label>
-          <button type="button" class="btn primary" id="ce-go">Find bins to empty</button>
-        </div>
-        <div class="panel-sec"><p class="hint" style="margin:0">Each pour is checked against the receiving bin's volume (bin type volume vs. quantity × L0 volume, the way putaway fills shelves),
-          its max weight if ticked, and its multi-SKU / multi-batch / max SKU / max SKU-batch rules counting what's already in it. Cases move whole, sized by their L2 volume.
-          A bin holding a unit that isn't ticked, bins with locked stock, fixed bins, and SKUs without a volume for their unit are left alone. Bin types whose volume looks unset (10,000 L or more) are skipped. Reads the stock now; nothing is moved.</p></div>
+  <section id="v-consolidate" class="cs-view" hidden>
+    <div class="panel cs-form" id="cu-form">
+      <div class="panel-sec">
+        <div class="field cs-goal"><span id="cu-goal-l">What to free</span>
+          <div class="seg" role="radiogroup" aria-labelledby="cu-goal-l">
+            <input type="radio" name="cu-goal" id="cug-e" value="empty" checked><label for="cug-e">Empty bins</label>
+            <input type="radio" name="cu-goal" id="cug-t" value="tidy"><label for="cug-t">Tidy pallets</label></div>
+          <small data-goal-hint></small></div>
       </div>
-      <div id="ce-out"></div>
-    </div>
-
-    <div id="cs-pallets" hidden>
-    <div class="panel"><div class="panel-sec" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-      <button type="button" class="btn primary" id="cs-go">Find what can be freed</button>
-      <p class="hint" style="margin:0;flex:1 1 300px">Reads the stock in this warehouse's storage bins right now. Nothing is moved or changed. Pallets a task has locked are left out of the plan.</p>
-    </div></div>
-    <div id="cs-out"></div>
-    </div>
-
-    <div id="cs-relocate" hidden>
-      <div class="panel">
-        <div class="panel-sec">
-          <div class="act-head"><h3>Empty bins of<small id="cr-from-count"></small></h3>
-            <button type="button" class="link" id="cr-reload">Reload areas</button></div>
-          <div id="cr-from" class="cr-pick"></div>
-        </div>
-        <div class="panel-sec">
-          <div class="act-head"><h3>Into bins of<small id="cr-to-count"></small></h3></div>
-          <div id="cr-to" class="cr-pick"></div>
-          <p class="hint" style="margin:8px 0 0">Every inventory area, pallet and shelf bins. Tick bin types inside a zone, so ZONE-1 3D bins and ZONE-2 1D bins don't also pull in ZONE-1 1D bins.
-            A bin ticked on both sides can give or take.</p>
-        </div>
-        <div class="panel-sec" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
-          <label class="field" style="max-width:200px"><span>Only empty bins under (% full)</span><input type="number" id="cr-below" value="5" min="0.1" max="100" step="0.5"></label>
-          <label class="field" style="max-width:260px"><span>Empty bins can receive</span><select id="cr-empty">
-            <option value="smaller" selected>Only smaller ones (frees space)</option><option value="any">Any (e.g. to clear a zone)</option><option value="none">No</option></select></label>
-          <label class="bf-check" style="padding-bottom:8px"><input type="checkbox" id="cr-kg" checked> Keep bins within their max kg</label>
-          <button type="button" class="btn primary" id="cr-go">Find bins to empty</button>
-        </div>
-        <div class="panel-sec"><p class="hint" style="margin:0">How full: a pallet bin counts full pallets (the SKU's L3, cases per pallet) over its pallet positions, so a 3D bin with 2 cases of a
-          48-case SKU is 1.4% full. A shelf bin counts stock volume over bin volume. A pallet's cases go onto a pallet of the same SKU and batch that has room, or the pallet moves whole
-          into a free position; pallet stock only goes to pallet bins, shelf stock only to shelf bins. Every step is checked against bin and pallet mixing rules (multi-SKU, multi-batch,
-          max SKU), pallet positions, a full pallet, max kg, the search table for another zone, task locks and fixed bins. Reads the stock now; nothing is moved.</p></div>
+      <div class="panel-sec">
+        <div class="act-head"><h3>Take stock from<small id="cu-from-count">Loading areas…</small></h3>
+          <div class="cs-links"><button type="button" class="link" data-cu-tick="PALLET" data-side="from">Every pallet bin</button><button type="button" class="link" data-cu-tick="BIN" data-side="from">Every shelf bin</button>
+            <button type="button" class="link" data-cu-tick="" data-side="from">Clear</button><button type="button" class="link" id="cu-reload">Reload areas</button></div></div>
+        <div id="cu-from" class="cr-pick"></div>
       </div>
-      <div id="cr-out"></div>
+      <div class="panel-sec">
+        <div class="act-head"><h3>Put it into<small id="cu-to-count"></small></h3>
+          <label class="bf-check"><input type="checkbox" id="cu-same" checked> The same bins as above</label></div>
+        <div id="cu-to" class="cr-pick" hidden></div>
+        <p class="hint" style="margin:8px 0 0">By zone and bin type, pallet and shelf bins. Pallet stock only goes to pallet bins and shelf stock only to shelf bins. Untick <b>The same bins</b>
+          to send stock somewhere else, e.g. from mezzanine 1D bins into ground 3D bins.</p>
+      </div>
+      <div class="panel-sec cs-opts">
+        <label class="field cs-num" data-show-goal="empty"><span>Only empty bins under (% full)</span><input type="number" id="cu-below" value="100" min="0.1" max="100" step="0.5"
+          title="Pallet bins: full pallets over pallet positions. Shelf bins: stock volume over bin volume. 100 = any bin."></label>
+        <div class="field cs-obj"><span id="cu-obj-l">Aim for</span>
+          <div class="seg" role="radiogroup" aria-labelledby="cu-obj-l">
+            <input type="radio" name="cu-obj" id="cuo-p" value="positions"><label for="cuo-p">Free pallet positions</label>
+            <input type="radio" name="cu-obj" id="cuo-b" value="bins" checked><label for="cuo-b">Free whole bins</label></div>
+          <small data-obj-hint="cu"></small></div>
+        <fieldset class="cs-checks"><legend>Rules</legend>
+          <label class="bf-check"><input type="checkbox" id="cu-cross"> Allow moves between zones <small>where the search table allows the SKU there</small></label>
+          <label class="bf-check"><input type="checkbox" id="cu-kg" checked> Keep bins within their max kg</label></fieldset>
+      </div>
+      <div class="panel-sec cs-opts cs-kindopts" data-show-kind="PALLET">
+        <fieldset class="cs-checks"><legend>Pallet bins</legend>
+          <label class="bf-check" data-show-goal="tidy"><input type="checkbox" id="cu-whole" checked> Also move whole pallets to empty smaller bins</label>
+          <label class="bf-check" data-show-goal="empty"><input type="checkbox" id="cu-merge" checked> Merge part-full pallets first <small>frees positions in bins that keep stock; used only when it frees more</small></label>
+          <label class="bf-check" data-show-goal="empty"><input type="checkbox" id="cu-skipep" checked> Skip bins with an empty pallet in them <small>the floor must clear it first</small></label></fieldset>
+        <label class="field cs-sel" data-show-goal="empty"><span>Empty pallet bins can receive</span><select id="cu-empty">
+          <option value="smaller" selected>Only smaller ones (frees space)</option><option value="any">Any (e.g. to clear a zone)</option><option value="none">No</option></select></label>
+      </div>
+      <div class="panel-sec cs-opts cs-kindopts" data-show-kind="BIN" data-show-goal="empty">
+        <fieldset class="cs-checks"><legend>Shelf bins</legend>
+          <label class="bf-check"><input type="checkbox" id="cu-u-l0" checked> Move eaches (L0)</label>
+          <label class="bf-check"><input type="checkbox" id="cu-u-l2"> Move cases (L2), whole</label></fieldset>
+        <label class="field cs-num"><span>Fill shelf bins up to (% of volume)</span><input type="number" id="cu-fill" value="100" min="10" max="100" step="5"></label>
+      </div>
+      <div class="panel-sec cs-opts cs-go">
+        <p class="hint" data-show-goal="empty" style="margin:0">Empties whole bins. Pallet bins: a pallet's cases go onto a pallet of the same stock that has room, or the pallet moves whole
+          into a free position. Shelf bins: stock is poured by volume into bins that already hold stock. Bins with arriving or locked stock, stock that isn't INCLUDED, and fixed bins are left alone.</p>
+        <p class="hint" data-show-goal="tidy" hidden style="margin:0">Frees pallet positions inside bins: merges cases of the same SKU, batch, bucket, owner and inclusion status onto the fullest pallet,
+          up to its best fit (the SKU's L2inL3), even where the bin keeps other pallets. Pallet bins only.</p>
+        <button type="button" class="btn primary" id="cu-go">Find what can be freed</button>
+      </div>
+      <div class="panel-sec"><p class="hint" style="margin:0">Every move is checked against the WMS capacity check the IM upload runs, pallet positions, bin and pallet mixing rules
+        (multi-SKU, multi-batch, max SKU), max kg if ticked, the search table for another zone, task locks and fixed bins, then replayed by an independent re-check. Reads the stock now; nothing is moved.</p></div>
     </div>
+    <div id="cu-out"></div>
+    <p class="sr" role="status" id="cs-status"></p>
   </section>
 
   <!-- masters ---------------------------------------------------------------- -->

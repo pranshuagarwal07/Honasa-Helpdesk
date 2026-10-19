@@ -4,3 +4,6 @@ data/
 _archive/
 *.log
 *.bak-*
+
+# client data snapshots (PROD) - never commit
+tests/fixtures/prod-*.json
