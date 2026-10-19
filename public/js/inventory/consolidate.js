@@ -499,6 +499,12 @@ const CU_AIM = {empty: 'bins', tidy: 'positions'};
   document.querySelectorAll('input[name="cu-goal"]').forEach(x => x.addEventListener('change', () => { pick('cu-obj', aimOf(cuGoal())); csObj('cu'); save(); }));
   csObj('cu'); cuSame();
 })();
+// the Consolidate sub-tabs (Empty bins, Tidy pallets) pick the goal; its in-page switch is hidden
+function cuSetGoal(goal) {
+  const x = document.querySelector(`input[name="cu-goal"][value="${goal}"]`);
+  if (x && !x.checked) { x.checked = true; x.dispatchEvent(new Event('change', {bubbles: true})); }
+  cuShow();
+}
 
 // ---- run ------------------------------------------------------------------------------------
 $('#cu-go').onclick = async function run() {

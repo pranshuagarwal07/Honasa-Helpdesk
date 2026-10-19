@@ -15,6 +15,7 @@
 <!--#rail-->
 <div class="stage">
 <main>
+  <div id="modnav" class="modnav"></div>
   <div class="page-head">
     <div>
       <h2 id="mode-title">Test case</h2>
@@ -23,7 +24,7 @@
   </div>
 
   <!-- build ------------------------------------------------------------------ -->
-  <section id="v-case">
+  <section id="v-case" hidden>
     <div class="panel case-bar">
       <label class="field"><span>Test case name</span><input type="text" id="c-name" placeholder="e.g. fefo-two-batches" spellcheck="false"></label>
       <div class="field"><span>Operation</span>
@@ -162,8 +163,8 @@
   <section id="v-consolidate" class="cs-view" hidden>
     <div class="panel cs-form" id="cu-form">
       <div class="panel-sec">
-        <div class="field cs-goal"><span id="cu-goal-l">What to free</span>
-          <div class="seg" role="radiogroup" aria-labelledby="cu-goal-l">
+        <div class="field cs-goal"><span id="cu-goal-l" data-driven-by-tab>What to free</span>
+          <div class="seg" role="radiogroup" aria-labelledby="cu-goal-l" data-driven-by-tab>
             <input type="radio" name="cu-goal" id="cug-e" value="empty" checked><label for="cug-e">Empty bins</label>
             <input type="radio" name="cu-goal" id="cug-t" value="tidy"><label for="cug-t">Tidy pallets</label></div>
           <small data-goal-hint></small></div>
@@ -254,12 +255,31 @@
       <span>Each line is compared with the stock now in those bins.</span></label>
     <div id="verify-out"></div>
   </section>
+  <!-- IM uploads ------------------------------------------------------------- -->
+  <section id="v-imfiles" class="narrow" hidden>
+    <div class="panel"><div class="panel-sec">
+      <h3>IM upload files come with a Consolidate plan</h3>
+      <p class="hint">Plan a consolidation (Empty bins or Tidy pallets). Under the plan, <b>Download IM upload</b> gives the files for
+        IM cockpit &gt; Internal Movement Upload: Sheet1, Pick HU as true/false, every bin within the WMS capacity check, and split
+        into numbered files when a later file needs the earlier tasks done first.</p>
+      <p style="margin:14px 0 0"><a class="btn primary" href="#consolidate/empty">Plan: empty bins</a> <a class="btn" href="#consolidate/tidy">Plan: tidy pallets</a></p>
+    </div></div>
+  </section>
+  <section id="v-imcheck" class="narrow" hidden>
+    <div class="panel"><div class="panel-sec">
+      <h3>Coming soon</h3>
+      <p class="hint">The IM upload checker will read any IM upload file and run the uploader's format rules plus live checks
+        (source stock and HU, destination bin, WMS capacity, task locks) before you upload it. Its checks are built on a separate
+        branch and not merged into this app yet; this is where it will live.</p>
+    </div></div>
+  </section>
 </main>
 </div>
 </div>
-<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat' }; // filled in by server.js</script>
+<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat', module: '__MODULE__' }; // filled in by server.js</script>
 <script src="/js/rail.js"></script>
 <script src="/js/combo.js"></script>
+<script src="/js/tabs.js"></script>
 <script src="/js/inventory/page.js"></script>
 <script src="/js/inventory/snapshot.js"></script>
 <script src="/js/inventory/fill.js"></script>

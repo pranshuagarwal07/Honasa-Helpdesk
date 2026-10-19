@@ -40,19 +40,21 @@ const encarta = makePool(DB_HOST, CFG.databases?.encarta || "encarta");
 // ---- http -------------------------------------------------------------------
 // read per request so page edits show up on refresh without a restart
 const RAIL_FOOT = "Pushing an ack writes to the WMS. Building, checking and verifying sheets never do.";
-// the sidebar is one file for every page; nav marks the link of a page that has no modes
+// the sidebar is one file for every page and lists the modules; nav marks the page's module, and the page
+// learns it as DESK.module (one page file can serve two modules: inventory.html is Inventory and Masters)
 const page = (file, nav) => {
   // the file's own leading comment is for whoever edits it, not for the page
   let rail = fs.readFileSync(path.join(PUBLIC, "partials", "rail.html"), "utf8").replace(/^<!--[\s\S]*?-->\r?\n/, "").trimEnd();
   if (nav) rail = rail.replace(`data-nav="${nav}"`, `data-nav="${nav}" aria-current="page"`);
   const html = fs.readFileSync(path.join(PUBLIC, "pages", file), "utf8").replace("<!--#rail-->", () => rail)
-    .replaceAll("__ENV__", ENV).replaceAll("__WH__", DEFAULT_WH_ID)
+    .replaceAll("__MODULE__", nav || "").replaceAll("__ENV__", ENV).replaceAll("__WH__", DEFAULT_WH_ID)
     .replaceAll("UAT desk", `${LABEL} desk`).replaceAll("run.bat", RUN_BAT);
   return !READ_ONLY ? html : html.replace("<body>", '<body class="read-only">')
     .replace(RAIL_FOOT, `Read-only: this app never writes to ${ENV}. Ack pushes are switched off here.`);
 };
-// inventory and ops mark their current link themselves, from the #mode in the address
-const PAGES = { "/": ["acks.html", "acks"], "/inventory": ["inventory.html"], "/compare": ["compare.html", "compare"], "/ops": ["ops.html"] };
+// one route per module; the tab and feature inside a module live in the #tab/feature of the address (js/tabs.js)
+const PAGES = { "/": ["acks.html", "acks"], "/ops": ["ops.html", "ops"], "/inventory": ["inventory.html", "inventory"],
+  "/masters": ["inventory.html", "masters"], "/compare": ["compare.html", "compare"] };
 
 // scripts, styles and images under public/. Pages only ever go through page(), never raw.
 const ASSET_TYPES = { ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml",

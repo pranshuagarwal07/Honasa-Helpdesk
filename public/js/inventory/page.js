@@ -1,5 +1,5 @@
-// Inventory page: shared helpers, the API call, and switching between the tools (#mode).
-// Loaded first; the tool files after it use these globals. start.js opens the first mode.
+// Inventory page (also the Masters module): shared helpers, the API call, and the module's tabs and features.
+// Loaded first; the tool files after it use these globals. start.js opens the first feature.
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = n => Number(n).toLocaleString();
@@ -35,16 +35,41 @@ async function api(path, opts = {}) {
   return body;
 }
 
-// ---- modes ----------------------------------------------------------------------
-const MODES = {"case":["Test case","Set up exact stock for a test. Pick bins, SKUs and batches, and download a sheet that passes the uploader's checks."],"build":["Bulk fill","Fill a warehouse to a target occupancy using only the SKUs, batches and bins it already has."],"check":["Check a sheet","Find every problem in an Append/Reset sheet before the upload burns its HU codes."],"verify":["Verify an upload","Compare what you uploaded with the stock now in those bins, and find pallets a failed upload left behind."],"consolidate":["Consolidate stock","Free bins and pallet positions in the stock as it is now, in pallet and shelf bins. Empty bins: empty the bins under a % full into others, pallets by pallet positions and shelf bins by volume. Tidy pallets: merge part-full pallets so fewer pallets hold the same stock. Every move is checked against the WMS capacity check, positions, mixing rules and task locks."],"masters":["Check masters","Check SKU, batch and production batch master sheets before they go into encarta, including the batch code rule: year, month, price (26JAN499)."]};
-function showMode(m) {
-  if (!MODES[m]) m = 'case';
-  for (const v of Object.keys(MODES)) $('#v-' + v).hidden = v !== m;
-  $('#mode-title').textContent = MODES[m][0];
-  $('#mode-lede').textContent = MODES[m][1];
-  document.title = MODES[m][0] + ' · ' + DESK.name;
-  document.querySelectorAll('.rail-nav a[data-nav]').forEach(a => a.dataset.nav === m ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  if (location.hash.slice(1) !== m) history.replaceState(null, '', '#' + m);
-  if (m === 'verify') renderVerifyLast();
-  if (m === 'build' && !state.snap) loadSnapshot();
-}
+// ---- module navigation --------------------------------------------------------------
+// This page is two modules: Inventory (/inventory) and Masters (/masters, DESK.module). js/tabs.js draws
+// their tabs and sub-tabs and shows one feature's section at a time; start.js opens it once every tool file
+// has loaded, because the onShow hooks below call functions defined in the files after this one.
+const MOVE_RULES = 'Every move is checked against the WMS capacity check, positions, mixing rules and task locks.';
+const MASTERS_LEDE = 'Check master sheets before they go into encarta, including the batch code rule: year, month, price (26JAN499).';
+const MODULES = {
+  inventory: {name: 'Inventory', tabs: [
+    {id: 'sheets', label: 'Build sheets', features: [
+      {id: 'case', label: 'Test case', view: '#v-case', lede: "Set up exact stock for a test. Pick bins, SKUs and batches, and download a sheet that passes the uploader's checks."},
+      {id: 'fill', label: 'Bulk fill', view: '#v-build', lede: 'Fill a warehouse to a target occupancy using only the SKUs, batches and bins it already has.',
+        onShow: () => { if (!state.snap) loadSnapshot(); }}]},
+    {id: 'check', label: 'Check', features: [
+      {id: 'sheet', label: 'Check a sheet', view: '#v-check', lede: 'Find every problem in an Append/Reset sheet before the upload burns its HU codes.'},
+      {id: 'verify', label: 'Verify an upload', view: '#v-verify', lede: 'Compare what you uploaded with the stock now in those bins, and find pallets a failed upload left behind.',
+        onShow: () => renderVerifyLast()}]},
+    {id: 'consolidate', label: 'Consolidate', features: [
+      {id: 'empty', label: 'Empty bins', view: '#v-consolidate', title: 'Empty bins',
+        lede: 'Empty the bins under a % full into others: pallets by pallet positions, shelf bins by volume. ' + MOVE_RULES, onShow: () => cuSetGoal('empty')},
+      {id: 'tidy', label: 'Tidy pallets', view: '#v-consolidate', title: 'Tidy pallets',
+        lede: 'Merge part-full pallets so fewer pallets hold the same stock. ' + MOVE_RULES, onShow: () => cuSetGoal('tidy')}]},
+    {id: 'im', label: 'IM uploads', features: [
+      {id: 'files', label: 'IM files', view: '#v-imfiles', title: 'IM upload files', lede: 'Internal Movement upload files for the IM cockpit, built from a Consolidate plan.'},
+      {id: 'checker', label: 'IM checker', view: '#v-imcheck', title: 'IM upload checker', lede: "Check any IM upload file against the uploader's rules and the live stock before you upload it."}]}],
+    // the old one-level #mode links
+    legacy: {case: 'sheets/case', build: 'sheets/fill', check: 'check/sheet', verify: 'check/verify', consolidate: 'consolidate'}},
+  masters: {name: 'Masters', tabs: [
+    {id: 'check', label: 'Check sheets', features: [
+      {id: 'all', label: 'All sheets', view: '#v-masters', title: 'Check master sheets', lede: MASTERS_LEDE, onShow: () => mastersFocus('')},
+      {id: 'sku', label: 'SKU', view: '#v-masters', title: 'Check the SKU master', lede: MASTERS_LEDE, onShow: () => mastersFocus('sku')},
+      {id: 'batch', label: 'Batch', view: '#v-masters', title: 'Check the batch master', lede: MASTERS_LEDE, onShow: () => mastersFocus('batch')},
+      {id: 'production', label: 'Production batch', view: '#v-masters', title: 'Check the production batch master', lede: MASTERS_LEDE,
+        onShow: () => mastersFocus('production')}]}],
+    legacy: {masters: 'check/all'}},
+};
+const MODULE = MODULES[DESK.module] || MODULES.inventory;
+// tool files jump between features with showMode('verify') and the like (old mode names work too)
+function showMode(m) { Tabs.go(m); }

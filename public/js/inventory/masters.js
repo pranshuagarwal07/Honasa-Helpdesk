@@ -3,6 +3,16 @@ const b64 = buf => { const b = new Uint8Array(buf); let s = ''; for (let i = 0; 
 
 const MP = makePicker($('#m-pick'), 'uatdesk.mastersOff', '/api/masters/catalog');
 
+// the Masters sub-tabs (SKU, Batch, Production batch) show only that sheet's checks; All sheets shows every
+// kind. Files of any kind are still accepted, so sheets dropped together are still checked against each other.
+const MASTER_SHEET = {sku: 'SKU master', batch: 'batch master', production: 'production batch master'};
+function mastersFocus(kind) {
+  const p = $('#m-pick');
+  if (kind) p.dataset.only = kind; else delete p.dataset.only;
+  $('#drop-masters b').textContent = kind ? `Drop the ${MASTER_SHEET[kind]} sheet here, or choose files`
+    : 'Drop SKU, batch and/or production batch master sheets here, or choose files';
+}
+
 async function checkMasters(files) {
   const out = $('#masters-out');
   files = [...files].filter(f => /\.xlsx$/i.test(f.name));

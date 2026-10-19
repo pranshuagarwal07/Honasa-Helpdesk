@@ -153,6 +153,33 @@ main { max-width: 1680px; padding: 40px 48px 96px; }
 .page-head h2 { margin: 0 0 8px; font: 800 44px/1 var(--display); letter-spacing: .005em; }
 .page-head p { margin: 0; color: var(--mut); font-size: 15px; line-height: 1.6; max-width: 68ch; }
 
+/* ---- module navigation: tab bar (sections) and sub-tabs (features), drawn by tabs.js ---- */
+.modnav { margin: -12px 0 30px; }
+.mod-name { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.tabbar { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tabbar::-webkit-scrollbar { display: none; }
+.tabbar a { position: relative; padding: 10px 16px 13px; border-radius: var(--r-sm) var(--r-sm) 0 0; color: var(--mut);
+  text-decoration: none; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.tabbar a:hover { color: var(--ink); background: var(--hover); }
+.tabbar a[aria-current="page"] { color: var(--ink); }
+.tabbar a[aria-current="page"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px;
+  border-radius: 3px 3px 0 0; background: var(--rack); }
+.subtabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.subtabs[hidden] { display: none; }
+.subtabs a { padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--mut);
+  text-decoration: none; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.subtabs a:hover { color: var(--ink); border-color: var(--line-strong); }
+.subtabs a[aria-current="page"] { background: var(--rack-soft); border-color: var(--rack); color: var(--rack); font-weight: 600; }
+.tabbar a:focus-visible, .subtabs a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+body.read-only .tabbar a[aria-current="page"]::after { background: var(--prod); }
+body.read-only .subtabs a[aria-current="page"] { background: color-mix(in srgb, var(--prod) 12%, var(--panel)); border-color: var(--prod); color: var(--prod); }
+/* features chosen by a sub-tab hide the in-page switch that did the same job */
+[data-driven-by-tab] { display: none !important; }
+/* Masters sub-tabs: the checks list shows only that kind of sheet's checks */
+#m-pick[data-only="sku"] .pick-group:not([data-kind="sku"]),
+#m-pick[data-only="batch"] .pick-group:not([data-kind="batch"]),
+#m-pick[data-only="production"] .pick-group:not([data-kind="production"]) { display: none; }
+
 /* ---- controls ---------------------------------------------------------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 8px 15px; border-radius: var(--r-sm);
   border: 1px solid var(--line-strong); background: var(--panel); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none;

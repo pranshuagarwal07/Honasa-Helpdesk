@@ -53,6 +53,32 @@ Pages and styles are read on every request, so edits under `public/` only need a
 Needs Node 18 or later, the StackBox VPN, and `config/envs.json` with your credentials. See
 [Before you start](#before-you-start-add-your-credentials).
 
+## Modules
+
+The sidebar lists one entry per module. Inside a module, a tab bar holds its sections and each section has
+sub-tabs for its features. The address keeps your place as `/<module>#<tab>/<feature>`, and the last place is
+remembered per module.
+
+| Module (route) | Tab | Features |
+|---|---|---|
+| Operations (`/ops`) | Go-live · Putaway · Stock health | Readiness · Why putaway says no · Stuck stock |
+| Acks (`/`) | Inbound · Outbound | GRN ack · GIN ack |
+| Inventory (`/inventory`) | Build sheets | Test case · Bulk fill |
+| | Check | Check a sheet · Verify an upload |
+| | Consolidate | Empty bins · Tidy pallets |
+| | IM uploads | IM files · IM checker (placeholder until the checker is merged) |
+| Masters (`/masters`) | Check sheets | All sheets · SKU · Batch · Production batch |
+| Config (`/compare`) | Compare | Compare nodes |
+
+Old links like `/inventory#verify` or `/ops#stuck` still open the right feature, and `/inventory#masters`
+goes to `/masters`.
+
+**To add a feature:** add its section to the module's page with `hidden` and an id, then add
+`{id, label, view: '#that-id', lede, onShow}` to the module's `tabs` list. That list is in
+`public/js/inventory/page.js` (Inventory and Masters), `ops.js`, `acks.js` or `compare.js`. `public/js/tabs.js`
+draws the tab bar and sub-tabs and shows one feature at a time. A new module also needs a route in `PAGES`
+(`server.js`) and a link in `public/partials/rail.html`.
+
 ## Folders
 
 ```
@@ -85,13 +111,14 @@ lib/             one folder per feature; each feature's index.js handles its own
   ops/             go-live readiness, putaway explainer, stuck stock
   compare/         compare two nodes' config
 public/          what the browser loads
-  pages/           acks.html (/), inventory.html (/inventory), ops.html (/ops), compare.html (/compare)
-                   server.js fills in the sidebar and the environment (the DESK line) when it serves them
+  pages/           acks.html (/), inventory.html (/inventory and /masters), ops.html (/ops), compare.html (/compare)
+                   server.js fills in the sidebar, the module and the environment (the DESK line) when it serves them
   css/app.css      shared styles and design tokens
-  js/              rail.js (sidebar), combo.js (the dropdowns on every page), one file per page:
+  js/              rail.js (sidebar), tabs.js (each module's tab bar and sub-tabs), combo.js (the dropdowns
+                   on every page), one file per page:
                    acks.js, ops.js, compare.js, and inventory/ with one file per tool, loaded in
                    order by inventory.html (page.js first, start.js last)
-  partials/        rail.html, the sidebar on every page
+  partials/        rail.html, the sidebar on every page (one link per module)
 tests/           unit/, integration/, fixtures/ (Node's built-in test runner)
 config/
   envs.json        database connections per environment (contains passwords; don't share)

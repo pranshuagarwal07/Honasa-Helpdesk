@@ -15,16 +15,18 @@
 <!--#rail-->
 <div class="stage">
 <main>
+  <div id="modnav" class="modnav"></div>
   <div class="page-head">
     <div>
-      <h2>GRN &amp; GIN acks</h2>
-      <p>Enter an ASN number to ack its GRN, or an outbound order code to ack its GIN. You review the payload before anything is sent.</p>
+      <h2 id="mode-title">GRN &amp; GIN acks</h2>
+      <p id="mode-lede">Enter an ASN number to ack its GRN, or an outbound order code to ack its GIN. You review the payload before anything is sent.</p>
     </div>
   </div>
+  <div id="acks-view">
   <form id="f" class="lookup" autocomplete="off">
     <label class="visually-hidden" for="code">ASN number or order code</label>
     <input id="code" spellcheck="false" placeholder="ASN or order code" autofocus>
-    <fieldset class="seg" style="border:0;margin:0">
+    <fieldset class="seg" style="border:0;margin:0" data-driven-by-tab>
       <legend class="visually-hidden">What the code is</legend>
       <input type="radio" name="kind" id="k-auto" value="auto" checked><label for="k-auto">Detect</label>
       <input type="radio" name="kind" id="k-asn" value="asn"><label for="k-asn">ASN</label>
@@ -43,11 +45,13 @@
       </ol>
     </section>
   </div>
+  </div>
 </main>
 </div>
 </div>
-<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat' }; // filled in by server.js</script>
+<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat', module: '__MODULE__' }; // filled in by server.js</script>
 <script src="/js/rail.js"></script>
+<script src="/js/tabs.js"></script>
 <script src="/js/acks.js"></script>
 </body>
 </html>

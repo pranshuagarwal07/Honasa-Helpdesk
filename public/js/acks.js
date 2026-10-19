@@ -225,3 +225,17 @@ async function doPush(payload) {
   showResult(outcome(cur.type, r, since), r);
   if (window.matchMedia('(max-width: 1060px)').matches) $('#res').scrollIntoView({block: 'nearest'});
 }
+
+// ---- module navigation (js/tabs.js): Inbound is the GRN ack of an ASN, Outbound the GIN ack of an order ----
+const ackKind = (kind, hint) => () => {
+  document.querySelector(`input[name=kind][value=${kind}]`).checked = true;
+  $('#code').placeholder = hint;
+  $('label[for=code]').textContent = hint;
+};
+Tabs.init({name: 'Acks', tabs: [
+  {id: 'inbound', label: 'Inbound', features: [
+    {id: 'grn', label: 'GRN ack', view: '#acks-view', title: 'GRN ack',
+      lede: 'Enter an ASN number to ack its GRN. You review the payload before anything is sent.', onShow: ackKind('asn', 'ASN number')}]},
+  {id: 'outbound', label: 'Outbound', features: [
+    {id: 'gin', label: 'GIN ack', view: '#acks-view', title: 'GIN ack',
+      lede: 'Enter an outbound order code to ack its GIN. You review the payload before anything is sent.', onShow: ackKind('order', 'Order code')}]}]});

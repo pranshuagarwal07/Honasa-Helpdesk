@@ -208,3 +208,9 @@ function tableBlock(t, rows, la, lb) {
 }
 
 init();
+
+// ---- module navigation (js/tabs.js). hash: false because results link to their own #sec-* anchors ----
+Tabs.init({name: 'Config', hash: false, tabs: [
+  {id: 'compare', label: 'Compare', features: [
+    {id: 'nodes', label: 'Compare nodes', view: '#cmp-form',
+      lede: 'Put two warehouses side by side, in the same environment or different ones, and see every master and configuration difference between them.'}]}]});

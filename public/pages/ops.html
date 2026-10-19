@@ -68,6 +68,7 @@ td.none { color: var(--faint); }
 <!--#rail-->
 <div class="stage">
 <main>
+  <div id="modnav" class="modnav"></div>
   <div class="page-head">
     <div>
       <h2 id="mode-title">Go-live readiness</h2>
@@ -117,9 +118,10 @@ td.none { color: var(--faint); }
 </main>
 </div>
 </div>
-<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat' }; // filled in by server.js</script>
+<script>const DESK = { env: '__ENV__', wh: '__WH__', name: 'UAT desk', runBat: 'run.bat', module: '__MODULE__' }; // filled in by server.js</script>
 <script src="/js/rail.js"></script>
 <script src="/js/combo.js"></script>
+<script src="/js/tabs.js"></script>
 <script src="/js/ops.js"></script>
 </body>
 </html>

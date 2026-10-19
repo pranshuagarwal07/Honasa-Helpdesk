@@ -17,23 +17,19 @@ async function api(path, opts = {}) {
 const needWh = out => { if (/^\d+$/.test(wh())) return false; out.innerHTML = '<div class="alert" role="alert">The warehouse id needs to be a number. Fix it in the sidebar.</div>'; $('#wh').focus(); return true; };
 const ago = h => h === null || h === undefined ? '' : h < 1 ? 'under an hour' : h < 48 ? `${h} h` : `${Math.round(h / 24)} days`;
 
-// ---- modes ------------------------------------------------------------------------
-const MODES = {
-  ready: ['Go-live readiness', 'One report for a warehouse before it goes live: what will block the first uploads, putaway and picking, and what differs from a warehouse that already works.'],
-  putaway: ['Why putaway says no', 'Give a SKU, batch, UOM and quantity. See every bin putaway can use, in the order it would try them, and for every other bin the rule that rejects it.'],
-  stuck: ['Stuck stock', 'Stock and pallets the WMS still treats as busy, and the sessions holding up the inventory upload.'],
-};
-function showMode(m) {
-  if (!MODES[m]) m = 'ready';
-  for (const k of Object.keys(MODES)) $('#v-' + k).hidden = k !== m;
-  $('#mode-title').textContent = MODES[m][0];
-  $('#mode-lede').textContent = MODES[m][1];
-  document.title = MODES[m][0] + ' · ' + DESK.name;
-  document.querySelectorAll('.rail-nav a[data-nav]').forEach(a => a.dataset.nav === m ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  if (location.hash.slice(1) !== m) history.replaceState(null, '', '#' + m);
-}
-addEventListener('hashchange', () => showMode(location.hash.slice(1)));
-showMode(location.hash.slice(1));
+// ---- module navigation (js/tabs.js) ---------------------------------------------------
+Tabs.init({name: 'Operations', tabs: [
+  {id: 'golive', label: 'Go-live', features: [
+    {id: 'ready', label: 'Readiness', view: '#v-ready', title: 'Go-live readiness',
+      lede: 'One report for a warehouse before it goes live: what will block the first uploads, putaway and picking, and what differs from a warehouse that already works.'}]},
+  {id: 'putaway', label: 'Putaway', features: [
+    {id: 'explain', label: 'Why putaway says no', view: '#v-putaway',
+      lede: 'Give a SKU, batch, UOM and quantity. See every bin putaway can use, in the order it would try them, and for every other bin the rule that rejects it.'}]},
+  {id: 'health', label: 'Stock health', features: [
+    {id: 'stuck', label: 'Stuck stock', view: '#v-stuck',
+      lede: 'Stock and pallets the WMS still treats as busy, and the sessions holding up the inventory upload.'}]}],
+  // the old one-level #mode links
+  legacy: {ready: 'golive/ready', putaway: 'putaway/explain', stuck: 'health/stuck'}});
 
 // ---- readiness ----------------------------------------------------------------------
 (async () => {
